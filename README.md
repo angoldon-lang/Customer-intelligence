@@ -453,6 +453,29 @@ app/
 - [ ] Git status clean (`git status`)
 - [ ] Commit message descrittivo
 - [ ] Push eseguito (`git push`)
+- [ ] Versione app aggiornata se la modifica è una release (vedi sotto)
+
+### Versionamento
+
+L'unica fonte di verità per la versione dell'app è `__version__` in `app/__init__.py`.
+Viene mostrata automaticamente in Impostazioni (`/settings`) e nella risposta di
+`GET /api/health`, quindi basta aggiornarla in un solo posto.
+
+Ad ogni modifica rilevante (nuova funzionalità, fix importante):
+
+1. Apri `app/__init__.py` e incrementa `__version__` seguendo [semver](https://semver.org/lang/it/):
+   - `MAJOR` per cambi che rompono compatibilità
+   - `MINOR` per nuove funzionalità retrocompatibili
+   - `PATCH` per bug fix
+2. Aggiungi una riga in cima al `CHANGELOG.md` con versione, data e riepilogo.
+3. Fai commit di entrambi i file insieme alla modifica.
+
+```bash
+# Esempio
+# app/__init__.py: __version__ = "0.2.0" -> "0.2.1"
+git add app/__init__.py CHANGELOG.md
+git commit -m "Bump version to 0.2.1 - fix XYZ"
+```
 
 ## Testing
 

@@ -9,6 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from datetime import datetime, timedelta
 import os
 
+from app import __version__
 from app.config import settings
 from app.database import init_db, get_db
 from app.models import Company, Cluster, NewsItem, Report, MonitoringRun
@@ -26,8 +27,14 @@ init_db()
 app = FastAPI(
     title="Customer Intelligence Monitor",
     description="Monitor news and intelligence about companies",
-    version="0.1.0",
+    version=__version__,
 )
+
+
+@app.on_event("shutdown")
+def on_shutdown():
+    """Stop background jobs so the process can exit cleanly on Ctrl+C."""
+    monitoring_scheduler.stop()
 
 # Setup templates
 templates = Jinja2Templates(directory="app/templates")
@@ -54,6 +61,7 @@ def health_check(db: Session = Depends(get_db)):
         "status": "ok",
         "database": True,
         "api": bool(settings.CLAUDE_API_KEY),
+        "version": __version__,
     }
 
 

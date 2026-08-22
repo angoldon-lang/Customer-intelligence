@@ -39,7 +39,7 @@ class MonitoringScheduler:
     def stop(self):
         """Stop the monitoring scheduler."""
         if self.scheduler.running:
-            self.scheduler.shutdown()
+            self.scheduler.shutdown(wait=False)
             self.is_running = False
             print("Monitoring scheduler stopped")
 

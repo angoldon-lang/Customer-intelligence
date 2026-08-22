@@ -133,7 +133,7 @@
         <table class="table" style="margin: 0;">
             <tr>
                 <td><strong>Versione app:</strong></td>
-                <td>0.1.0 (MVP)</td>
+                <td id="app-version">-</td>
             </tr>
             <tr>
                 <td><strong>Database:</strong></td>
@@ -169,6 +169,8 @@
         try {
             const response = await fetch('/api/health');
             const data = await response.json();
+
+            document.getElementById('app-version').textContent = data.version || '-';
 
             const statusDiv = document.getElementById('api-status');
             if (data.api) {
