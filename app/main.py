@@ -310,17 +310,18 @@ def stop_monitoring():
 
 
 @app.post("/api/monitoring/run-now")
-def run_monitoring_now(db: Session = Depends(get_db)):
-    """Run monitoring immediately."""
-    result = monitoring_scheduler.run_once()
-    return {
-        "status": "completed",
-        "companies_checked": result.get('companies_checked', 0),
-        "companies_needing_enrichment": result.get('companies_needing_enrichment', 0),
-        "news_found": result.get('news_found', 0),
-        "news_saved": result.get('news_saved', 0),
-        "errors": result.get('errors', [])
-    }
+def run_monitoring_now():
+    """
+    Start a monitoring run in the background and return immediately.
+
+    A run can take minutes on a large company list (GDELT/GNews are
+    rate-limited client-side), so this no longer blocks the HTTP request -
+    poll GET /api/monitoring/status for progress and results.
+    """
+    started = monitoring_scheduler.run_now_async()
+    if not started:
+        raise HTTPException(status_code=409, detail="A monitoring run is already in progress")
+    return {"status": "started", "message": "Monitoring run started in background"}
 
 
 @app.get("/api/monitoring/status")
@@ -330,6 +331,7 @@ def get_monitoring_status(db: Session = Depends(get_db)):
 
     return {
         "is_running": monitoring_scheduler.is_running,
+        "run_in_progress": monitoring_scheduler.run_in_progress,
         "last_run": {
             "finished_at": last_run.finished_at.isoformat() if last_run else None,
             "companies_checked": last_run.companies_processed if last_run else 0,

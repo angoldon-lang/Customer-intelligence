@@ -4,6 +4,26 @@ Tutte le modifiche rilevanti a questo progetto sono documentate in questo file.
 Il formato segue [Keep a Changelog](https://keepachangelog.com/) e il progetto
 usa [Semantic Versioning](https://semver.org/lang/it/).
 
+## [0.3.1] - 2026-08-22
+
+### Fixed
+- **GDELT 429 "Too Many Requests"**: nessuna pausa tra le richieste faceva
+  saturare quasi subito il rate limit gratuito di GDELT su anagrafiche
+  grandi, azzerando i risultati per (quasi) tutte le aziende dopo le prime.
+  Aggiunto un ritmo minimo tra le richieste (~1.2s) e un circuit breaker:
+  su un 429 persistente, GDELT viene disattivato per il resto del run
+  invece di continuare a martellarlo per ogni azienda restante.
+- **`Esegui monitoraggio ORA` non si fermava con Ctrl+C**: essendo una
+  richiesta HTTP sincrona, interrompere il server con Ctrl+C annullava solo
+  la risposta HTTP, non il thread che eseguiva davvero la ricerca - che
+  continuava a girare "orfano" in background (visibile dai log GDELT che
+  continuavano a comparire anche dopo "Finished server process"). Ora
+  `POST /api/monitoring/run-now` avvia il run su un thread background e
+  risponde subito; lo stato/risultato si segue da Impostazioni (polling di
+  `GET /api/monitoring/status`, che ora espone anche `run_in_progress`).
+  Un secondo run richiesto mentre uno è già in corso risponde 409 invece di
+  accodarsi silenziosamente.
+
 ## [0.3.0] - 2026-08-22
 
 ### Added

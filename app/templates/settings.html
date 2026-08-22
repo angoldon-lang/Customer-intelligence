@@ -297,12 +297,32 @@
         alert('Test SMTP sarà implementato nella Fase 3. Invierà un email di test.');
     }
 
+    let wasRunInProgress = false;
+
     async function checkSchedulerStatus() {
         try {
             const response = await fetch('/api/monitoring/status');
             const data = await response.json();
 
             const statusDiv = document.getElementById('scheduler-status');
+
+            if (data.run_in_progress) {
+                statusDiv.innerHTML = '⏳ Monitoraggio in corso... (può richiedere alcuni minuti su molte aziende, per non superare i limiti di GDELT/GNews)';
+                statusDiv.style.background = '#cfe2ff';
+                statusDiv.style.color = '#004085';
+                wasRunInProgress = true;
+                return;
+            }
+
+            if (wasRunInProgress && data.last_run) {
+                wasRunInProgress = false;
+                const r = data.last_run;
+                statusDiv.innerHTML = `✓ Monitoraggio completato: ${r.companies_checked} aziende controllate, ${r.news_saved} notizie salvate`;
+                statusDiv.style.background = '#d4edda';
+                statusDiv.style.color = '#155724';
+                return;
+            }
+
             if (data.is_running) {
                 statusDiv.innerHTML = '✓ Scheduler ATTIVO - Monitoraggio in esecuzione automatica';
                 statusDiv.style.background = '#d4edda';
@@ -355,17 +375,20 @@
     async function runMonitoringNow() {
         try {
             const statusDiv = document.getElementById('scheduler-status');
-            statusDiv.innerHTML = 'Esecuzione monitoraggio in corso...';
+            statusDiv.innerHTML = 'Avvio monitoraggio...';
             statusDiv.style.background = '#cfe2ff';
 
             const response = await fetch('/api/monitoring/run-now', { method: 'POST' });
-            const data = await response.json();
 
             if (response.ok) {
-                statusDiv.innerHTML = `✓ Monitoraggio completato! ${data.news_saved} notizie salvate`;
-                statusDiv.style.background = '#d4edda';
-                statusDiv.style.color = '#155724';
-                alert(`Monitoraggio completato:\n- Aziende controllate: ${data.companies_checked}\n- Aziende saltate (da arricchire con sito/P.IVA): ${data.companies_needing_enrichment || 0}\n- Notizie trovate: ${data.news_found}\n- Notizie salvate: ${data.news_saved}`);
+                // Runs in the background now (can take minutes on many
+                // companies) - checkSchedulerStatus polling shows progress
+                // and, once done, the result.
+                wasRunInProgress = true;
+                checkSchedulerStatus();
+            } else if (response.status === 409) {
+                alert('Un monitoraggio è già in corso, attendi che finisca.');
+                checkSchedulerStatus();
             } else {
                 alert('Errore nell\'esecuzione del monitoraggio');
                 checkSchedulerStatus();

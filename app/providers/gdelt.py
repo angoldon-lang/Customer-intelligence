@@ -2,11 +2,19 @@
 
 from typing import List, Dict, Any
 from datetime import datetime
+import time
 import requests
 from app.providers.base import NewsSourceProvider, NewsArticle
 from app.config import settings
 
 GDELT_ENDPOINT = "https://api.gdeltproject.org/api/v2/doc/doc"
+
+# GDELT's free DOC API has no published quota but rate-limits bursts hard
+# (429s start almost immediately without pacing). Space requests out and
+# trip a circuit breaker on repeated 429s instead of hammering it once per
+# company across a run of hundreds/thousands of companies.
+MIN_REQUEST_INTERVAL = 1.2  # seconds between requests
+BACKOFF_SECONDS = 20  # wait once on a 429 before giving the retry a chance
 
 
 class GDELTProvider(NewsSourceProvider):
@@ -19,10 +27,31 @@ class GDELTProvider(NewsSourceProvider):
 
     def __init__(self, timeout: int = None):
         self.timeout = timeout or settings.NEWS_SEARCH_TIMEOUT
+        self._last_request_at = 0.0
+        self.rate_limited = False
+
+    def _throttle(self):
+        elapsed = time.monotonic() - self._last_request_at
+        if elapsed < MIN_REQUEST_INTERVAL:
+            time.sleep(MIN_REQUEST_INTERVAL - elapsed)
+        self._last_request_at = time.monotonic()
+
+    def _get(self, params: dict) -> requests.Response:
+        self._throttle()
+        response = requests.get(GDELT_ENDPOINT, params=params, timeout=self.timeout)
+        if response.status_code == 429:
+            print(f"[GDELT] Rate limited, backing off {BACKOFF_SECONDS}s and retrying once")
+            time.sleep(BACKOFF_SECONDS)
+            self._throttle()
+            response = requests.get(GDELT_ENDPOINT, params=params, timeout=self.timeout)
+        return response
 
     def search_company_news(
         self, company_name: str, keywords: List[str] = None
     ) -> List[NewsArticle]:
+        if self.rate_limited:
+            return []
+
         query = f'"{company_name}"'
         if keywords:
             query += " " + " ".join(keywords)
@@ -37,7 +66,11 @@ class GDELTProvider(NewsSourceProvider):
         }
 
         try:
-            response = requests.get(GDELT_ENDPOINT, params=params, timeout=self.timeout)
+            response = self._get(params)
+            if response.status_code == 429:
+                print("[GDELT] Still rate limited after backoff, disabling GDELT for the rest of this run")
+                self.rate_limited = True
+                return []
             response.raise_for_status()
             data = response.json()
         except (requests.RequestException, ValueError) as e:

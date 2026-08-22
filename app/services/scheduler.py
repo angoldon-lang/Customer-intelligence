@@ -1,5 +1,6 @@
 """Automated monitoring scheduler with cluster-tiered frequency."""
 
+import threading
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from datetime import datetime
@@ -71,6 +72,8 @@ class MonitoringScheduler:
         self.scheduler = BackgroundScheduler()
         self.searcher = NewsSearcher()
         self.is_running = False
+        self.run_in_progress = False
+        self._run_lock = threading.Lock()
 
     def start(self, interval_hours: int = 24):
         """Start the monitoring scheduler."""
@@ -124,11 +127,16 @@ class MonitoringScheduler:
         return result
 
     def _monitoring_job(self):
-        """Monitoring job executed periodically."""
+        """Monitoring job executed periodically (runs on APScheduler's own thread)."""
+        if not self._run_lock.acquire(blocking=False):
+            print("Monitoring job skipped: a run is already in progress")
+            return
+
         from sqlalchemy.orm import sessionmaker
         SessionFactory = sessionmaker(bind=engine)
         db = SessionFactory()
 
+        self.run_in_progress = True
         try:
             self._run(db)
         except Exception as e:
@@ -136,17 +144,44 @@ class MonitoringScheduler:
             db.rollback()
         finally:
             db.close()
+            self.run_in_progress = False
+            self._run_lock.release()
 
     def run_once(self) -> Dict[str, Any]:
-        """Run monitoring immediately."""
-        from sqlalchemy.orm import sessionmaker
-        SessionFactory = sessionmaker(bind=engine)
-        db = SessionFactory()
+        """
+        Run monitoring immediately, synchronously, and return the result.
 
-        try:
-            return self._run(db)
-        finally:
-            db.close()
+        Can take a long time on a large company list (GDELT/GNews are
+        rate-limited client-side). Prefer run_now_async() from an HTTP
+        request so a client disconnect (e.g. Ctrl+C on the server) doesn't
+        leave the run orphaned mid-request with no way to observe it.
+        """
+        with self._run_lock:
+            from sqlalchemy.orm import sessionmaker
+            SessionFactory = sessionmaker(bind=engine)
+            db = SessionFactory()
+
+            self.run_in_progress = True
+            try:
+                return self._run(db)
+            finally:
+                db.close()
+                self.run_in_progress = False
+
+    def run_now_async(self) -> bool:
+        """
+        Start a monitoring run on a background thread and return immediately.
+
+        Returns False (without starting anything) if a run is already in
+        progress. The caller should poll get_monitoring_status()/history
+        for progress and results instead of waiting on this call.
+        """
+        if self.run_in_progress:
+            return False
+
+        thread = threading.Thread(target=self._monitoring_job, daemon=True)
+        thread.start()
+        return True
 
 
 # Global scheduler instance
