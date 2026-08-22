@@ -264,6 +264,196 @@ Il progetto è sviluppato in modo modulare e incrementale. Ogni componente è se
 - **scheduler**: APScheduler per monitoraggio periodico
 - **dashboard**: Interface web Jinja/FastAPI
 
+## Sviluppare l'app - Aggiornamenti e modifiche
+
+### Setup per sviluppo
+
+```bash
+# Attivare venv
+source venv/bin/activate
+
+# Installare dipendenze con dev tools
+pip install -r requirements.txt
+pip install black flake8 pytest
+
+# Avviare app in development mode
+uvicorn app.main:app --reload --port 8001
+```
+
+### Flusso di sviluppo
+
+#### 1. Creare un branch per la feature
+```bash
+git checkout -b feature/nome-feature
+# es: feature/add-email-sending
+```
+
+#### 2. Fare modifiche
+- **Modifica backend** → `app/main.py`, `app/services/`, `app/models.py`
+- **Modifica frontend** → `app/templates/*.html`
+- **Modifica database** → `app/models.py`
+- **Modifica logica** → `app/services/`
+
+#### 3. Testare i cambiamenti
+```bash
+# L'app ricaricha automaticamente con --reload
+# Apri http://localhost:8001 nel browser
+
+# Oppure testa via API
+curl http://localhost:8001/api/health
+```
+
+#### 4. Eseguire i test
+```bash
+pytest tests/ -v
+
+# Test singolo file
+pytest tests/test_importer.py -v
+
+# Test con coverage
+pytest --cov=app tests/
+```
+
+#### 5. Fare commit dei cambiamenti
+```bash
+# Visualizzare cambiamenti
+git status
+git diff
+
+# Stage dei file
+git add app/main.py app/templates/
+
+# Commit con messaggio descrittivo
+git commit -m "Feature: Aggiungi funzionalità X
+
+Descrizione dei cambiamenti:
+- Punto 1
+- Punto 2
+
+Co-Authored-By: Claude Haiku 4.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01Gm5bweKb7cvHgcZFGKb2Gz"
+```
+
+#### 6. Pushare i cambiamenti
+```bash
+# Push branch feature
+git push -u origin feature/nome-feature
+
+# Oppure push al branch principale (se autorizzato)
+git push origin claude/customer-intelligence-monitor-vzirll
+```
+
+### Struttura cartelle per modifiche
+
+```
+app/
+├── main.py                 ← Endpoint FastAPI (aggiorna qui per nuove route)
+├── models.py              ← Modelli database (nuove tabelle)
+├── config.py              ← Configurazione (variabili env)
+├── database.py            ← Connessione DB
+├── services/
+│   ├── importer.py       ← Import file Excel/CSV
+│   ├── normalizer.py     ← Pulizia dati
+│   ├── classifier.py     ← Classificazione AI Claude
+│   ├── clustering.py     ← Gestione cluster
+│   └── reporter.py       ← Generazione report
+├── providers/            ← News source providers
+│   ├── base.py          ← Interfaccia astratta
+│   └── mock.py          ← Provider mock per test
+└── templates/           ← HTML Jinja2 templates
+    ├── base.html        ← Layout principale
+    ├── index.html       ← Dashboard
+    ├── upload.html      ← Upload file
+    ├── companies.html   ← Gestione aziende
+    ├── clusters.html    ← Configurazione cluster
+    ├── news.html        ← Visualizza notizie
+    ├── reports.html     ← Genera report
+    └── settings.html    ← Impostazioni
+```
+
+### Aggiungere una nuova pagina
+
+1. **Crea template HTML** in `app/templates/nuova_pagina.html`
+   - Estendi `base.html`
+   - Usa lo stesso CSS e struttura
+
+2. **Aggiungi endpoint** in `app/main.py`
+   ```python
+   @app.get("/nuova-pagina", response_class=HTMLResponse)
+   def nuova_pagina(request: Request):
+       return templates.TemplateResponse("nuova_pagina.html", {"request": request})
+   ```
+
+3. **Aggiungi link nel menu** in `app/templates/base.html`
+   ```html
+   <a href="/nuova-pagina">📌 Nuova pagina</a>
+   ```
+
+4. **Test e commit**
+
+### Aggiungere una nuova API
+
+1. **Aggiungi endpoint** in `app/main.py`
+   ```python
+   @app.post("/api/azione")
+   def azione(param1: str, db: Session = Depends(get_db)):
+       # Logica qui
+       return {"result": "ok"}
+   ```
+
+2. **Testa via curl**
+   ```bash
+   curl -X POST "http://localhost:8001/api/azione?param1=value"
+   ```
+
+3. **Commit e push**
+
+### Aggiungere una nuova funzionalità nei services
+
+1. **Crea o modifica file** in `app/services/`
+2. **Importa in main.py**
+   ```python
+   from app.services.nuovo_servizio import NuovoServizio
+   ```
+3. **Usa nell'endpoint**
+   ```python
+   servizio = NuovoServizio()
+   risultato = servizio.metodo()
+   ```
+4. **Testa e commit**
+
+### Aggiungere test per nuove funzioni
+
+1. **Crea file test** in `tests/test_nuova_funzione.py`
+   ```python
+   import pytest
+   from app.services.nuova_funzione import NuovaFunzione
+
+   def test_funzione():
+       func = NuovaFunzione()
+       result = func.metodo()
+       assert result is not None
+   ```
+
+2. **Esegui test**
+   ```bash
+   pytest tests/test_nuova_funzione.py -v
+   ```
+
+3. **Commit con test**
+
+### Checklist prima di pushare
+
+- [ ] App avviata senza errori
+- [ ] Nuove funzioni testate manualmente
+- [ ] Test suite passa (`pytest tests/`)
+- [ ] Nessun warning nei log
+- [ ] Browser aperto a http://localhost:8001
+- [ ] Modifiche testate sul browser
+- [ ] Git status clean (`git status`)
+- [ ] Commit message descrittivo
+- [ ] Push eseguito (`git push`)
+
 ## Testing
 
 ```bash
