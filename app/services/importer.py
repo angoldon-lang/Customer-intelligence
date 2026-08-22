@@ -94,9 +94,15 @@ class DataImporter:
 
     def _remove_duplicate_headers(self, df: pd.DataFrame) -> pd.DataFrame:
         """Remove rows that are duplicate headers."""
+        if len(df) <= 1:
+            return df
+
         header_row = df.iloc[0]
-        df = df[~df.apply(lambda x: (x == header_row).all(), axis=1).iloc[1:]]
-        return df.reset_index(drop=True)
+        # Find rows that match the header (duplicate headers)
+        mask = df.apply(lambda x: (x == header_row).all(), axis=1)
+        # Keep only rows that are NOT duplicate headers
+        df = df[~mask].reset_index(drop=True)
+        return df
 
     def _process_row(self, row: pd.Series) -> Dict[str, Any] | None:
         """
