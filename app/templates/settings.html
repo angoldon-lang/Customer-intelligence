@@ -56,20 +56,26 @@
     </div>
 
     <div class="card">
-        <h3>⏰ Scheduler monitoraggio</h3>
+        <h3>Scheduler monitoraggio</h3>
+        <div id="scheduler-status" style="padding: 12px; background: #fff3cd; border-radius: 4px; margin-bottom: 15px; color: #856404;">
+            Caricamento stato...
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px;">
+            <button type="button" class="btn btn-success" onclick="startScheduler()">Avvia scheduler</button>
+            <button type="button" class="btn btn-danger" onclick="stopScheduler()">Ferma scheduler</button>
+        </div>
+
+        <button type="button" class="btn btn-primary" style="width: 100%; margin-bottom: 15px;" onclick="runMonitoringNow()">Esegui monitoraggio ORA</button>
+
         <form id="scheduler-form">
             <div class="form-group">
-                <label>Abilita scheduler automatico</label>
-                <input type="checkbox" id="scheduler-enabled" checked>
-                <small style="display: block; color: #7f8c8d; margin-top: 5px;">Se abilitato, il sistema monitorerà automaticamente le aziende</small>
-            </div>
-
-            <div class="form-group">
-                <label>Intervallo monitoraggio (ore)</label>
+                <label>Intervallo automatico (ore)</label>
                 <input type="number" id="check-interval" value="24" min="1" max="168">
+                <small style="color: #7f8c8d;">Quanto spesso cercare notizie automaticamente</small>
             </div>
 
-            <button type="submit" class="btn btn-success">💾 Salva</button>
+            <button type="submit" class="btn btn-success">Salva intervallo</button>
         </form>
     </div>
 
@@ -187,6 +193,85 @@
         alert('Test SMTP sarà implementato nella Fase 3. Invierà un email di test.');
     }
 
+    async function checkSchedulerStatus() {
+        try {
+            const response = await fetch('/api/monitoring/status');
+            const data = await response.json();
+
+            const statusDiv = document.getElementById('scheduler-status');
+            if (data.is_running) {
+                statusDiv.innerHTML = '✓ Scheduler ATTIVO - Monitoraggio in esecuzione automatica';
+                statusDiv.style.background = '#d4edda';
+                statusDiv.style.color = '#155724';
+            } else {
+                statusDiv.innerHTML = '⚠ Scheduler INATTIVO - Clicca "Avvia scheduler" per iniziare il monitoraggio automatico';
+                statusDiv.style.background = '#fff3cd';
+                statusDiv.style.color = '#856404';
+            }
+        } catch (error) {
+            console.error('Error checking scheduler:', error);
+        }
+    }
+
+    async function startScheduler() {
+        const hours = prompt('Intervallo monitoraggio (ore)?', '24');
+        if (!hours) return;
+
+        try {
+            const response = await fetch(`/api/monitoring/start?interval_hours=${hours}`, {
+                method: 'POST'
+            });
+            if (response.ok) {
+                alert('Scheduler avviato! Il sistema cercherà notizie ogni ' + hours + ' ore');
+                checkSchedulerStatus();
+            } else {
+                alert('Errore nell\'avvio dello scheduler');
+            }
+        } catch (error) {
+            alert('Errore: ' + error.message);
+        }
+    }
+
+    async function stopScheduler() {
+        if (!confirm('Fermare il monitoraggio automatico?')) return;
+
+        try {
+            const response = await fetch('/api/monitoring/stop', { method: 'POST' });
+            if (response.ok) {
+                alert('Scheduler fermato');
+                checkSchedulerStatus();
+            } else {
+                alert('Errore nel fermo dello scheduler');
+            }
+        } catch (error) {
+            alert('Errore: ' + error.message);
+        }
+    }
+
+    async function runMonitoringNow() {
+        try {
+            const statusDiv = document.getElementById('scheduler-status');
+            statusDiv.innerHTML = 'Esecuzione monitoraggio in corso...';
+            statusDiv.style.background = '#cfe2ff';
+
+            const response = await fetch('/api/monitoring/run-now', { method: 'POST' });
+            const data = await response.json();
+
+            if (response.ok) {
+                statusDiv.innerHTML = `✓ Monitoraggio completato! ${data.news_saved} notizie salvate`;
+                statusDiv.style.background = '#d4edda';
+                statusDiv.style.color = '#155724';
+                alert(`Monitoraggio completato:\n- Aziende controllate: ${data.companies_checked}\n- Notizie trovate: ${data.news_found}\n- Notizie salvate: ${data.news_saved}`);
+            } else {
+                alert('Errore nell\'esecuzione del monitoraggio');
+                checkSchedulerStatus();
+            }
+        } catch (error) {
+            alert('Errore: ' + error.message);
+            checkSchedulerStatus();
+        }
+    }
+
     function cleanupDatabase() {
         if (confirm('Pulire il database rimuovendo notizie duplicate e vecchie?')) {
             alert('Funzionalità di cleanup sarà implementata nella Fase 2');
@@ -222,5 +307,9 @@
 
     // Load status on page load
     checkAPIStatus();
+    checkSchedulerStatus();
+
+    // Refresh scheduler status every 10 seconds
+    setInterval(checkSchedulerStatus, 10000);
 </script>
 {% endblock %}
