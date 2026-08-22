@@ -6,6 +6,7 @@ from app.providers.test import TestNewsProvider
 from app.providers.gdelt import GDELTProvider
 from app.providers.gnews import GNewsProvider
 from app.providers.rss import RSSProvider
+from app.providers.google_news_rss import GoogleNewsRSSProvider
 
 __all__ = [
     "NewsSourceProvider",
@@ -14,4 +15,5 @@ __all__ = [
     "GDELTProvider",
     "GNewsProvider",
     "RSSProvider",
+    "GoogleNewsRSSProvider",
 ]

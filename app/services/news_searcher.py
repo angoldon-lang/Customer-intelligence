@@ -1,10 +1,10 @@
 """News search and monitoring service.
 
-Pipeline: GDELT + GNews.io + official RSS feeds produce a deduplicated list
-of structured article stubs (title, url, source, date, snippet only - never
-full page content), which are then handed to Claude for the "intelligent"
-part: judging whether the article really is about the company, summarizing
-it, and scoring it.
+Pipeline: Google News RSS + GDELT + GNews.io + official RSS feeds produce a
+deduplicated list of structured article stubs (title, url, source, date,
+snippet only - never full page content), which are then handed to Claude
+for the "intelligent" part: judging whether the article really is about
+the company, summarizing it, and scoring it.
 """
 
 from typing import List, Dict, Any, Optional
@@ -14,6 +14,7 @@ from app.config import settings
 from app.models import Company, NewsItem
 from app.services.classifier import NewsClassifier
 from app.providers.base import NewsSourceProvider
+from app.providers.google_news_rss import GoogleNewsRSSProvider
 from app.providers.gdelt import GDELTProvider
 from app.providers.gnews import GNewsProvider
 from app.providers.rss import RSSProvider
@@ -29,6 +30,11 @@ class NewsSearcher:
     def _build_providers(self, db: Session) -> List[NewsSourceProvider]:
         """Build the provider list for one monitoring run."""
         providers: List[NewsSourceProvider] = []
+
+        # Google News RSS first: best coverage for small/local Italian
+        # companies, which GDELT/GNews often don't index at all.
+        if settings.GOOGLE_NEWS_RSS_ENABLED:
+            providers.append(GoogleNewsRSSProvider())
 
         if settings.GDELT_ENABLED:
             providers.append(GDELTProvider())

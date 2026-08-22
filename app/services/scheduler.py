@@ -99,10 +99,10 @@ class MonitoringScheduler:
             self.is_running = False
             print("Monitoring scheduler stopped")
 
-    def _run(self, db: Session) -> Dict[str, Any]:
+    def _run(self, db: Session, limit: int = None) -> Dict[str, Any]:
         start_time = datetime.utcnow()
 
-        due_companies = get_due_companies(db, limit=settings.MAX_COMPANIES_PER_RUN)
+        due_companies = get_due_companies(db, limit=limit or settings.MAX_COMPANIES_PER_RUN)
         result = self.searcher.monitor_all_companies(db, companies=due_companies)
 
         end_time = datetime.utcnow()
@@ -126,7 +126,7 @@ class MonitoringScheduler:
 
         return result
 
-    def _monitoring_job(self):
+    def _monitoring_job(self, limit: int = None):
         """Monitoring job executed periodically (runs on APScheduler's own thread)."""
         if not self._run_lock.acquire(blocking=False):
             print("Monitoring job skipped: a run is already in progress")
@@ -138,7 +138,7 @@ class MonitoringScheduler:
 
         self.run_in_progress = True
         try:
-            self._run(db)
+            self._run(db, limit=limit)
         except Exception as e:
             print(f"Error in monitoring job: {e}")
             db.rollback()
@@ -147,7 +147,7 @@ class MonitoringScheduler:
             self.run_in_progress = False
             self._run_lock.release()
 
-    def run_once(self) -> Dict[str, Any]:
+    def run_once(self, limit: int = None) -> Dict[str, Any]:
         """
         Run monitoring immediately, synchronously, and return the result.
 
@@ -163,14 +163,17 @@ class MonitoringScheduler:
 
             self.run_in_progress = True
             try:
-                return self._run(db)
+                return self._run(db, limit=limit)
             finally:
                 db.close()
                 self.run_in_progress = False
 
-    def run_now_async(self) -> bool:
+    def run_now_async(self, limit: int = None) -> bool:
         """
         Start a monitoring run on a background thread and return immediately.
+
+        `limit` overrides MAX_COMPANIES_PER_RUN for this run only - handy to
+        test on a handful of companies without editing .env and restarting.
 
         Returns False (without starting anything) if a run is already in
         progress. The caller should poll get_monitoring_status()/history
@@ -179,7 +182,7 @@ class MonitoringScheduler:
         if self.run_in_progress:
             return False
 
-        thread = threading.Thread(target=self._monitoring_job, daemon=True)
+        thread = threading.Thread(target=self._monitoring_job, args=(limit,), daemon=True)
         thread.start()
         return True
 

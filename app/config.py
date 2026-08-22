@@ -40,6 +40,10 @@ class Settings:
     # GDELT (free, no API key, always available)
     GDELT_ENABLED: bool = os.getenv("GDELT_ENABLED", "True").lower() == "true"
 
+    # Google News RSS (free, no API key). Best coverage for small/local
+    # Italian companies that GDELT/GNews rarely index.
+    GOOGLE_NEWS_RSS_ENABLED: bool = os.getenv("GOOGLE_NEWS_RSS_ENABLED", "True").lower() == "true"
+
     # GNews.io (requires API key, used to validate/complement GDELT coverage)
     GNEWS_API_KEY: Optional[str] = os.getenv("GNEWS_API_KEY")
 

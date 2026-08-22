@@ -4,6 +4,28 @@ Tutte le modifiche rilevanti a questo progetto sono documentate in questo file.
 Il formato segue [Keep a Changelog](https://keepachangelog.com/) e il progetto
 usa [Semantic Versioning](https://semver.org/lang/it/).
 
+## [0.4.0] - 2026-08-22
+
+### Added
+- **Google News RSS come nuova fonte** (`app/providers/google_news_rss.py`),
+  gratuita e senza chiave API: usa il feed RSS pubblico di ricerca
+  (`news.google.com/rss/search`), non la pagina HTML già bloccata in
+  precedenza da un consent-wall/proxy. Ha in genere una copertura molto
+  migliore di GDELT/GNews per piccole aziende italiane locali, che i grandi
+  aggregator spesso non indicizzano. Attiva di default
+  (`GOOGLE_NEWS_RSS_ENABLED=True`), con lo stesso ritmo/circuit-breaker di
+  GDELT per evitare blocchi.
+- `POST /api/monitoring/run-now?limit=N` per testare il monitoraggio su un
+  numero ridotto di aziende senza modificare `.env` e riavviare - anche da
+  Impostazioni con il nuovo campo "Limita a N aziende".
+- `POST /api/admin/cleanup` (bottone "🧹 Pulisci database" in Impostazioni,
+  ora funzionante): rimuove notizie non approvate/inviate più vecchie di
+  180 giorni e lo storico monitoraggi oltre lo stesso periodo.
+- `POST /api/admin/reset` (bottone "🔄 Reset sistema", ora funzionante):
+  cancella tutti i dati (aziende, cluster, notizie, report, fonti) tenendo
+  lo schema del database intatto. Irreversibile, richiede `confirm=RESET`
+  e doppia conferma lato browser.
+
 ## [0.3.1] - 2026-08-22
 
 ### Fixed

@@ -89,6 +89,12 @@
             <button type="button" class="btn btn-danger" onclick="stopScheduler()">Ferma scheduler</button>
         </div>
 
+        <div class="form-group">
+            <label>Limita a N aziende (solo per questo run, opzionale)</label>
+            <input type="number" id="run-limit" min="1" placeholder="es. 5 - per testare velocemente">
+            <small style="color: #7f8c8d;">Lascia vuoto per usare il limite di default (MAX_COMPANIES_PER_RUN). Utile per verificare rapidamente se la ricerca trova notizie senza aspettare l'intera anagrafica.</small>
+        </div>
+
         <button type="button" class="btn btn-primary" style="width: 100%; margin-bottom: 15px; font-weight: bold;" onclick="runMonitoringNow(); return false;">Esegui monitoraggio ORA</button>
 
         <form id="scheduler-form">
@@ -222,6 +228,7 @@
             const badge = (ok, label) => `<span class="badge ${ok ? 'badge-success' : 'badge-warning'}" style="margin-right: 8px;">${ok ? '✓' : '⚠'} ${label}</span>`;
 
             document.getElementById('providers-status').innerHTML =
+                badge(data.google_news_rss.enabled, 'Google News RSS (gratuito)') +
                 badge(data.gdelt.enabled, 'GDELT (gratuito)') +
                 badge(data.gnews.enabled, data.gnews.enabled ? 'GNews.io' : 'GNews.io (manca GNEWS_API_KEY in .env)') +
                 badge(data.rss.enabled, `RSS ufficiali (${data.rss.active_feeds} attivi)`);
@@ -378,7 +385,9 @@
             statusDiv.innerHTML = 'Avvio monitoraggio...';
             statusDiv.style.background = '#cfe2ff';
 
-            const response = await fetch('/api/monitoring/run-now', { method: 'POST' });
+            const limitInput = document.getElementById('run-limit');
+            const limit = limitInput && limitInput.value ? `?limit=${encodeURIComponent(limitInput.value)}` : '';
+            const response = await fetch(`/api/monitoring/run-now${limit}`, { method: 'POST' });
 
             if (response.ok) {
                 // Runs in the background now (can take minutes on many
@@ -399,15 +408,37 @@
         }
     }
 
-    function cleanupDatabase() {
-        if (confirm('Pulire il database rimuovendo notizie duplicate e vecchie?')) {
-            alert('Funzionalità di cleanup sarà implementata nella Fase 2');
+    async function cleanupDatabase() {
+        if (!confirm('Rimuovere le notizie non approvate/inviate più vecchie di 180 giorni e lo storico monitoraggi oltre 180 giorni?')) return;
+
+        try {
+            const response = await fetch('/api/admin/cleanup?days=180', { method: 'POST' });
+            const data = await response.json();
+            if (response.ok) {
+                alert(`Pulizia completata:\n- Notizie rimosse: ${data.deleted_news_items}\n- Run di monitoraggio rimossi: ${data.deleted_monitoring_runs}`);
+            } else {
+                alert('Errore: ' + (data.detail || 'pulizia fallita'));
+            }
+        } catch (error) {
+            alert('Errore: ' + error.message);
         }
     }
 
-    function resetSystem() {
-        if (confirm('ATTENZIONE: Reset del sistema cancellerà TUTTI i dati. Sei sicuro?')) {
-            alert('Funzionalità di reset sarà implementata nella Fase 2');
+    async function resetSystem() {
+        if (!confirm('ATTENZIONE: Reset del sistema cancellerà TUTTI i dati (aziende, cluster, notizie, report, fonti). Sei sicuro?')) return;
+        if (!confirm('Sei DAVVERO sicuro? Questa azione è irreversibile.')) return;
+
+        try {
+            const response = await fetch('/api/admin/reset?confirm=RESET', { method: 'POST' });
+            const data = await response.json();
+            if (response.ok) {
+                alert('Reset completato: tutti i dati sono stati cancellati.');
+                window.location.href = '/';
+            } else {
+                alert('Errore: ' + (data.detail || 'reset fallito'));
+            }
+        } catch (error) {
+            alert('Errore: ' + error.message);
         }
     }
 

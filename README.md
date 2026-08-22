@@ -222,12 +222,26 @@ generazione report email per cluster
 
 | Provider | Costo | Cosa fornisce | Config |
 |---|---|---|---|
+| **Google News RSS** (`app/providers/google_news_rss.py`) | Gratuito, nessuna chiave | Feed RSS pubblico di ricerca (non la pagina HTML, bloccata da un consent-wall) - in genere la copertura migliore per piccole aziende italiane locali | Attivo di default (`GOOGLE_NEWS_RSS_ENABLED=True`) |
 | **GDELT** (`app/providers/gdelt.py`) | Gratuito, nessuna chiave | Copertura ampia: titolo, url, dominio, data. Nessuno snippet. | Attivo di default (`GDELT_ENABLED=True`) |
 | **GNews.io** (`app/providers/gnews.py`) | Piano gratuito 100 richieste/giorno (solo dev secondo il loro ToS), piani a pagamento per produzione | Validazione/copertura aggiuntiva con snippet (`description`) | `GNEWS_API_KEY` in `.env` |
 | **RSS ufficiali** (`app/providers/rss.py`) | Gratuito | Comunicati stampa/IR direttamente dal sito dell'azienda, la fonte più affidabile | Configurabile da Impostazioni → "Fonti notizie", o via `POST /api/news-sources` |
 
 Se nessun provider è configurabile/raggiungibile, il sistema usa
 `TestNewsProvider` (dati di esempio) così la pipeline resta testabile.
+
+GDELT e Google News RSS sono gratuiti ma non hanno un vero SLA: il client
+li richiama con un ritmo minimo tra le richieste e un circuit breaker (si
+disattivano per il resto del run se continuano a rispondere 429/403 dopo un
+tentativo di backoff), invece di continuare a martellarli per ogni azienda
+restante.
+
+### Testare velocemente senza aspettare l'intera anagrafica
+
+`POST /api/monitoring/run-now?limit=N` (o il campo "Limita a N aziende" in
+Impostazioni) esegue il monitoraggio solo sulle prime N aziende scadute,
+utile per verificare rapidamente se la ricerca trova notizie prima di
+lanciare un run completo su migliaia di aziende.
 
 ### Aziende ambigue (es. "AR Group", "ASA SRL", "ARMANDO SRL")
 

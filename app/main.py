@@ -12,7 +12,7 @@ import os
 from app import __version__
 from app.config import settings
 from app.database import init_db, get_db
-from app.models import Company, Cluster, NewsItem, Report, MonitoringRun, NewsSource
+from app.models import Company, Cluster, NewsItem, Report, MonitoringRun, NewsSource, CompanyCluster, ClusterRecipient
 from app.services import DataImporter, DataNormalizer, ClusterManager
 from app.services.classifier import NewsClassifier
 from app.services.reporter import ReportGenerator
@@ -310,15 +310,19 @@ def stop_monitoring():
 
 
 @app.post("/api/monitoring/run-now")
-def run_monitoring_now():
+def run_monitoring_now(limit: int = None):
     """
     Start a monitoring run in the background and return immediately.
 
     A run can take minutes on a large company list (GDELT/GNews are
     rate-limited client-side), so this no longer blocks the HTTP request -
     poll GET /api/monitoring/status for progress and results.
+
+    `limit` restricts this run to at most N due companies (overrides
+    MAX_COMPANIES_PER_RUN for this run only) - useful to quickly test on a
+    handful of companies instead of waiting on the full list.
     """
-    started = monitoring_scheduler.run_now_async()
+    started = monitoring_scheduler.run_now_async(limit=limit)
     if not started:
         raise HTTPException(status_code=409, detail="A monitoring run is already in progress")
     return {"status": "started", "message": "Monitoring run started in background"}
@@ -367,6 +371,7 @@ def get_providers_status(db: Session = Depends(get_db)):
     """Report which news providers are active, for the settings page."""
     rss_count = db.query(NewsSource).filter_by(source_type="rss", enabled=True).count()
     return {
+        "google_news_rss": {"enabled": settings.GOOGLE_NEWS_RSS_ENABLED, "requires_key": False},
         "gdelt": {"enabled": settings.GDELT_ENABLED, "requires_key": False},
         "gnews": {"enabled": bool(settings.GNEWS_API_KEY), "requires_key": True},
         "rss": {"enabled": settings.RSS_ENABLED and rss_count > 0, "active_feeds": rss_count},
@@ -442,6 +447,59 @@ def delete_news_source(source_id: int, db: Session = Depends(get_db)):
     db.delete(source)
     db.commit()
     return {"message": "Source deleted"}
+
+
+# ============================================================================
+# Admin / Maintenance
+# ============================================================================
+
+@app.post("/api/admin/cleanup")
+def cleanup_database(days: int = 180, db: Session = Depends(get_db)):
+    """
+    Remove stale news items and old monitoring run history.
+
+    News items with status Approved or Sent are kept regardless of age
+    (they're curated/already used in a report); everything else older than
+    `days` is removed. Old monitoring run log entries beyond the same
+    window are removed too, since they're just diagnostic history.
+    """
+    cutoff = datetime.utcnow() - timedelta(days=days)
+
+    deleted_news = (
+        db.query(NewsItem)
+        .filter(NewsItem.created_at < cutoff, NewsItem.status.notin_(["Approved", "Sent"]))
+        .delete(synchronize_session=False)
+    )
+    deleted_runs = (
+        db.query(MonitoringRun)
+        .filter(MonitoringRun.started_at < cutoff)
+        .delete(synchronize_session=False)
+    )
+    db.commit()
+
+    return {
+        "message": "Cleanup completed",
+        "deleted_news_items": deleted_news,
+        "deleted_monitoring_runs": deleted_runs,
+        "cutoff_days": days,
+    }
+
+
+@app.post("/api/admin/reset")
+def reset_system(confirm: str = "", db: Session = Depends(get_db)):
+    """
+    Wipe ALL data (companies, clusters, news, reports, sources, run history)
+    while keeping the schema intact. Irreversible - requires confirm=RESET.
+    """
+    if confirm != "RESET":
+        raise HTTPException(status_code=400, detail="Pass confirm=RESET to actually wipe all data")
+
+    # Children before parents, to satisfy SQLite's foreign key constraints.
+    for model in [NewsItem, CompanyCluster, ClusterRecipient, Report, MonitoringRun, NewsSource, Cluster, Company]:
+        db.query(model).delete(synchronize_session=False)
+    db.commit()
+
+    return {"message": "All data has been reset"}
 
 
 # ============================================================================
