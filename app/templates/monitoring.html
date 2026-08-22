@@ -1,0 +1,233 @@
+{% extends "base.html" %}
+
+{% block page_title %}Monitoraggio notizie{% endblock %}
+
+{% block content %}
+<div class="page-title">
+    <h2>Monitoraggio automatico</h2>
+    <p>Gestisci la ricerca automatica di notizie per le aziende</p>
+</div>
+
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 30px;">
+    <div class="card">
+        <h3>⏰ Controllo scheduler</h3>
+        <div id="scheduler-status" style="padding: 15px; background: #fff3cd; border-radius: 4px; margin-bottom: 15px;">
+            Caricamento...
+        </div>
+        <div style="display: flex; gap: 10px;">
+            <button class="btn btn-success" onclick="startMonitoring()">▶️ Avvia</button>
+            <button class="btn btn-danger" onclick="stopMonitoring()">⏹️ Ferma</button>
+            <button class="btn btn-primary" onclick="runNow()">🔄 Esegui ora</button>
+        </div>
+    </div>
+
+    <div class="card">
+        <h3>📊 Statistiche</h3>
+        <div style="padding: 10px 0;">
+            <p><strong>Ultimo ciclo:</strong> <span id="last-run">-</span></p>
+            <p><strong>Aziende controllate:</strong> <span id="checked-companies">-</span></p>
+            <p><strong>Notizie trovate:</strong> <span id="found-news">-</span></p>
+            <p><strong>Notizie salvate:</strong> <span id="saved-news">-</span></p>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+        <h3>📋 Cronologia monitoraggio</h3>
+        <button class="btn btn-primary btn-sm" onclick="refreshHistory()">🔄 Aggiorna</button>
+    </div>
+
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Data/Ora</th>
+                <th>Aziende</th>
+                <th>Notizie trovate</th>
+                <th>Notizie salvate</th>
+                <th>Stato</th>
+            </tr>
+        </thead>
+        <tbody id="history-table">
+            <tr>
+                <td colspan="5" style="text-align: center; color: #7f8c8d;">Caricamento...</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <div id="empty-state" style="display: none; padding: 40px 20px; text-align: center; color: #7f8c8d;">
+        <p>Nessun ciclo di monitoraggio ancora. Avvia il monitoraggio per iniziare!</p>
+    </div>
+</div>
+
+<!-- Configurazione scheduler -->
+<div class="card" style="margin-top: 20px;">
+    <h3>⚙️ Configurazione</h3>
+    <form id="scheduler-config-form">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+            <div class="form-group">
+                <label>Intervallo monitoraggio (ore)</label>
+                <input type="number" id="interval-hours" value="24" min="1" max="168">
+                <small style="color: #7f8c8d;">Quanto frequentemente cercare notizie</small>
+            </div>
+
+            <div class="form-group">
+                <label>Rilevanza minima</label>
+                <select id="min-relevance">
+                    <option value="1">Tutte (1+)</option>
+                    <option value="3">Bassa (3+)</option>
+                    <option value="5" selected>Media (5+)</option>
+                    <option value="7">Alta (7+)</option>
+                    <option value="9">Critica (9+)</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>Alert email per rischio alto</label>
+                <input type="email" id="alert-email" placeholder="email@example.com">
+                <small style="color: #7f8c8d;">Ricevi avvisi per notizie critiche</small>
+            </div>
+
+            <div class="form-group">
+                <label>Categoria notizie</label>
+                <select id="news-category" multiple style="height: 100px;">
+                    <option value="M&A" selected>M&A</option>
+                    <option value="Investment">Investment</option>
+                    <option value="Financial">Financial</option>
+                    <option value="Cybersecurity">Cybersecurity</option>
+                    <option value="IT/Digital" selected>IT/Digital</option>
+                    <option value="Legal">Legal</option>
+                </select>
+            </div>
+        </div>
+
+        <button type="submit" class="btn btn-success" style="margin-top: 15px;">💾 Salva configurazione</button>
+    </form>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let lastStatus = null;
+
+    async function loadStatus() {
+        try {
+            const response = await fetch('/api/monitoring/status');
+            const data = await response.json();
+
+            const statusDiv = document.getElementById('scheduler-status');
+            if (data.is_running) {
+                statusDiv.innerHTML = '✓ Monitoraggio ATTIVO';
+                statusDiv.style.background = '#d4edda';
+                statusDiv.style.color = '#155724';
+            } else {
+                statusDiv.innerHTML = '⚠️ Monitoraggio INATTIVO - Clicca "Avvia" per iniziare';
+                statusDiv.style.background = '#fff3cd';
+                statusDiv.style.color = '#856404';
+            }
+
+            // Update stats
+            if (data.last_run) {
+                document.getElementById('last-run').textContent = new Date(data.last_run.completed_at).toLocaleString('it-IT');
+                document.getElementById('checked-companies').textContent = data.last_run.companies_checked;
+                document.getElementById('found-news').textContent = data.last_run.news_found;
+                document.getElementById('saved-news').textContent = data.last_run.news_saved;
+            }
+
+            lastStatus = data;
+        } catch (error) {
+            console.error('Error loading status:', error);
+        }
+    }
+
+    async function loadHistory() {
+        try {
+            const response = await fetch('/api/monitoring/history?limit=20');
+            const data = await response.json();
+
+            const tbody = document.getElementById('history-table');
+            const emptyState = document.getElementById('empty-state');
+
+            if (data.runs.length === 0) {
+                tbody.innerHTML = '';
+                emptyState.style.display = 'block';
+                return;
+            }
+
+            emptyState.style.display = 'none';
+            tbody.innerHTML = data.runs.map(r => `
+                <tr>
+                    <td>${new Date(r.completed_at).toLocaleString('it-IT')}</td>
+                    <td>${r.companies_checked}</td>
+                    <td>${r.news_found}</td>
+                    <td>${r.news_saved}</td>
+                    <td><span class="badge badge-success">${r.status}</span></td>
+                </tr>
+            `).join('');
+        } catch (error) {
+            console.error('Error loading history:', error);
+        }
+    }
+
+    async function startMonitoring() {
+        const hours = prompt('Intervallo monitoraggio (ore)?', '24');
+        if (!hours) return;
+
+        try {
+            const response = await fetch(`/api/monitoring/start?interval_hours=${hours}`, {
+                method: 'POST'
+            });
+            const data = await response.json();
+            alert('✓ Monitoraggio avviato');
+            loadStatus();
+        } catch (error) {
+            alert('Errore: ' + error.message);
+        }
+    }
+
+    async function stopMonitoring() {
+        if (!confirm('Fermare il monitoraggio automatico?')) return;
+
+        try {
+            const response = await fetch('/api/monitoring/stop', { method: 'POST' });
+            const data = await response.json();
+            alert('✓ Monitoraggio fermato');
+            loadStatus();
+        } catch (error) {
+            alert('Errore: ' + error.message);
+        }
+    }
+
+    async function runNow() {
+        try {
+            const response = await fetch('/api/monitoring/run-now', { method: 'POST' });
+            const data = await response.json();
+            alert(`✓ Monitoraggio completato!\n- Aziende controllate: ${data.companies_checked}\n- Notizie trovate: ${data.news_found}\n- Notizie salvate: ${data.news_saved}`);
+            loadStatus();
+            loadHistory();
+        } catch (error) {
+            alert('Errore: ' + error.message);
+        }
+    }
+
+    function refreshHistory() {
+        loadHistory();
+    }
+
+    // Form submission
+    document.getElementById('scheduler-config-form').addEventListener('submit', (e) => {
+        e.preventDefault();
+        alert('Salvataggio configurazione avanzata sarà disponibile in prossimi aggiornamenti');
+    });
+
+    // Load on page load
+    loadStatus();
+    loadHistory();
+
+    // Auto-refresh every 30 seconds
+    setInterval(() => {
+        loadStatus();
+    }, 30000);
+</script>
+{% endblock %}

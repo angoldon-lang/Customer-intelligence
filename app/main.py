@@ -15,6 +15,9 @@ from app.models import Company, Cluster, NewsItem, Report, MonitoringRun
 from app.services import DataImporter, DataNormalizer, ClusterManager
 from app.services.classifier import NewsClassifier
 from app.services.reporter import ReportGenerator
+from app.services.news_searcher import NewsSearcher
+from app.services.scheduler import monitoring_scheduler
+from app.services.email_sender import EmailSender
 from app.providers import MockNewsProvider
 
 # Initialize database tables
@@ -251,6 +254,160 @@ def list_reports(
     }
 
 
+# ============================================================================
+# Phase 2 - News Monitoring
+# ============================================================================
+
+@app.post("/api/monitoring/start")
+def start_monitoring(
+    interval_hours: int = 24,
+    db: Session = Depends(get_db)
+):
+    """Start automatic news monitoring."""
+    monitoring_scheduler.start(interval_hours)
+    return {
+        "status": "started",
+        "interval_hours": interval_hours,
+        "message": "News monitoring started"
+    }
+
+
+@app.post("/api/monitoring/stop")
+def stop_monitoring():
+    """Stop automatic news monitoring."""
+    monitoring_scheduler.stop()
+    return {
+        "status": "stopped",
+        "message": "News monitoring stopped"
+    }
+
+
+@app.post("/api/monitoring/run-now")
+def run_monitoring_now(db: Session = Depends(get_db)):
+    """Run monitoring immediately."""
+    result = monitoring_scheduler.run_once()
+    return {
+        "status": "completed",
+        "companies_checked": result.get('companies_checked', 0),
+        "news_found": result.get('news_found', 0),
+        "news_saved": result.get('news_saved', 0),
+        "errors": result.get('errors', [])
+    }
+
+
+@app.get("/api/monitoring/status")
+def get_monitoring_status(db: Session = Depends(get_db)):
+    """Get monitoring status."""
+    last_run = db.query(MonitoringRun).order_by(MonitoringRun.completed_at.desc()).first()
+
+    return {
+        "is_running": monitoring_scheduler.is_running,
+        "last_run": {
+            "completed_at": last_run.completed_at.isoformat() if last_run else None,
+            "companies_checked": last_run.companies_checked if last_run else 0,
+            "news_found": last_run.news_found if last_run else 0,
+            "news_saved": last_run.news_saved if last_run else 0,
+            "status": last_run.status if last_run else "Never run",
+        } if last_run else {}
+    }
+
+
+@app.get("/api/monitoring/history")
+def get_monitoring_history(limit: int = 10, db: Session = Depends(get_db)):
+    """Get monitoring run history."""
+    runs = db.query(MonitoringRun).order_by(MonitoringRun.completed_at.desc()).limit(limit).all()
+
+    return {
+        "total": len(runs),
+        "runs": [
+            {
+                "completed_at": r.completed_at.isoformat(),
+                "companies_checked": r.companies_checked,
+                "news_found": r.news_found,
+                "news_saved": r.news_saved,
+                "status": r.status,
+            }
+            for r in runs
+        ]
+    }
+
+
+# ============================================================================
+# Phase 3 - Email Sending
+# ============================================================================
+
+@app.post("/api/reports/{report_id}/send")
+def send_report(
+    report_id: int,
+    db: Session = Depends(get_db)
+):
+    """Send report to recipients."""
+    report = db.query(Report).filter_by(id=report_id).first()
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+
+    # Get cluster recipients
+    recipients = [r.email for r in report.cluster.recipients if r.email]
+    if not recipients:
+        raise HTTPException(status_code=400, detail="No recipients configured for this cluster")
+
+    # Send email
+    sender = EmailSender()
+    result = sender.send_report(
+        to_emails=recipients,
+        subject=report.subject,
+        html_content=report.html_content or "<p>Report content</p>",
+        text_content=report.text_content or "Report content"
+    )
+
+    if result['success']:
+        report.status = 'Sent'
+        report.sent_at = datetime.utcnow()
+        db.commit()
+
+        return {
+            "status": "sent",
+            "recipients": len(recipients),
+            "message": f"Report sent to {len(recipients)} recipients"
+        }
+    else:
+        raise HTTPException(status_code=400, detail=result['error'])
+
+
+@app.post("/api/email/test-smtp")
+def test_smtp_connection():
+    """Test SMTP connection."""
+    sender = EmailSender()
+    result = sender.test_connection()
+
+    return result
+
+
+@app.post("/api/email/send-alert")
+def send_alert_email(
+    news_id: int,
+    recipient_email: str,
+    db: Session = Depends(get_db)
+):
+    """Send urgent alert email for critical news."""
+    news = db.query(NewsItem).filter_by(id=news_id).first()
+    if not news:
+        raise HTTPException(status_code=404, detail="News not found")
+
+    sender = EmailSender()
+    result = sender.send_alert(
+        to_email=recipient_email,
+        company_name=news.company.company_name,
+        news_title=news.title,
+        risk_score=news.risk_score
+    )
+
+    if result['success']:
+        return {"status": "sent", "message": "Alert sent successfully"}
+    else:
+        raise HTTPException(status_code=400, detail=result['error'])
+
+
 @app.post("/api/reports/generate")
 def generate_report(
     cluster_id: int,
@@ -310,6 +467,12 @@ def reports_page(request: Request):
 def settings_page(request: Request):
     """Settings page."""
     return templates.TemplateResponse("settings.html", {"request": request})
+
+
+@app.get("/monitoring", response_class=HTMLResponse)
+def monitoring_page(request: Request):
+    """Monitoring page."""
+    return templates.TemplateResponse("monitoring.html", {"request": request})
 
 
 if __name__ == "__main__":

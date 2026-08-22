@@ -87,7 +87,7 @@
 
         <div style="display: flex; gap: 10px; justify-content: flex-end;">
             <button class="btn btn-danger btn-sm" onclick="closeReportModal()">Chiudi</button>
-            <button class="btn btn-primary btn-sm" onclick="sendReport()">📧 Invia</button>
+            <button class="btn btn-success btn-sm" onclick="sendReport()">📧 Invia email</button>
         </div>
     </div>
 </div>
@@ -248,8 +248,20 @@
 
         if (!confirm('Inviare il report ai destinatari configurati?')) return;
 
-        alert('Funzionalità di invio sarà implementata nella Fase 3');
-        closeReportModal();
+        try {
+            const response = await fetch(`/api/reports/${currentReportId}/send`, { method: 'POST' });
+            if (response.ok) {
+                const data = await response.json();
+                alert(`✓ Report inviato a ${data.recipients} destinatari!`);
+                closeReportModal();
+                loadReports();
+            } else {
+                const error = await response.json();
+                alert('Errore: ' + error.detail);
+            }
+        } catch (error) {
+            alert('Errore: ' + error.message);
+        }
     }
 
     // Event listeners
