@@ -25,7 +25,7 @@ class NewsClassifier:
     ]
 
     def __init__(self):
-        self.client = Anthropic() if settings.CLAUDE_API_KEY else None
+        self.client = Anthropic() if (settings.CLAUDE_API_KEY or settings.ANTHROPIC_API_KEY) else None
 
     def classify_news(
         self,
@@ -36,15 +36,22 @@ class NewsClassifier:
         article_text: str = None,
         ateco_description: str = None,
         account_owner: str = None,
+        website: str = None,
+        tax_code: str = None,
     ) -> Dict[str, Any]:
         """
         Classify news article using Claude.
+
+        Only structured metadata is sent (title, source, url, snippet) -
+        never full page content. website/tax_code are passed purely as
+        disambiguation hints so Claude can judge whether the article
+        genuinely refers to this specific company and not a homonym.
 
         Returns:
             Dict with category, scores, summary, etc.
         """
         if not article_text:
-            article_text = "(Content not available)"
+            article_text = "(Snippet non disponibile)"
 
         if not self.client:
             # No API key configured: return a neutral default classification
@@ -67,6 +74,10 @@ Analizza la seguente notizia relativa al cliente indicato.
 
 Cliente: {company_name}
 
+Sito web cliente: {website or 'N/A'}
+
+P.IVA/Codice fiscale cliente: {tax_code or 'N/A'}
+
 Settore: {ateco_description or 'N/A'}
 
 Referente commerciale: {account_owner or 'N/A'}
@@ -77,8 +88,12 @@ Fonte: {source_name}
 
 URL: {url}
 
-Testo o contenuto disponibile:
+Snippet/estratto disponibile (non l'articolo completo):
 {article_text}
+
+Prima di tutto valuta se la notizia riguarda davvero QUESTO cliente specifico
+(usa nome, sito web, settore come riferimento) e non un'altra azienda con
+nome simile o omonimo: se ci sono dubbi, abbassa fortemente confidence_score.
 
 Restituisci un JSON con:
 - summary (breve sintesi della notizia, max 200 caratteri)
@@ -87,15 +102,15 @@ Restituisci un JSON con:
 - urgency_score (1-10: quanto richiede attenzione immediata)
 - commercial_score (1-10: opportunità commerciale potenziale)
 - risk_score (1-10: criticità o rischio da attenzionare)
-- confidence_score (1-10: affidabilità dell'associazione notizia-cliente)
+- confidence_score (1-10: affidabilità dell'associazione notizia-cliente, basso se potrebbe essere un omonimo)
 - why_it_matters (una frase su perché è importante)
 - suggested_action (azione consigliata per il team)
 - email_ready_summary (sintesi pronta per email, max 150 caratteri)
 
 Regole:
-- Non inventare informazioni
+- Non inventare informazioni oltre a quanto fornito nello snippet
 - Se la notizia è poco pertinente, assegna relevance_score basso (1-3)
-- Se il cliente non è citato chiaramente, abbassa confidence_score
+- Se il cliente non è citato chiaramente o potrebbe essere un omonimo, abbassa confidence_score (1-3)
 - Se il contenuto completo non è disponibile, non inventare la sintesi
 - Mantieni tono professionale, sintetico e operativo
 - Restituisci SOLO il JSON, niente altro"""

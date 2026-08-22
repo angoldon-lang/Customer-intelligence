@@ -34,6 +34,23 @@ class Settings:
     # News Search
     NEWS_SEARCH_TIMEOUT: int = int(os.getenv("NEWS_SEARCH_TIMEOUT", "30"))
     NEWS_MAX_RESULTS_PER_COMPANY: int = int(os.getenv("NEWS_MAX_RESULTS_PER_COMPANY", "10"))
+    NEWS_LANGUAGE: str = os.getenv("NEWS_LANGUAGE", "it")
+    NEWS_COUNTRY: str = os.getenv("NEWS_COUNTRY", "IT")
+
+    # GDELT (free, no API key, always available)
+    GDELT_ENABLED: bool = os.getenv("GDELT_ENABLED", "True").lower() == "true"
+
+    # GNews.io (requires API key, used to validate/complement GDELT coverage)
+    GNEWS_API_KEY: Optional[str] = os.getenv("GNEWS_API_KEY")
+
+    # RSS / official company sources, configured via the news_sources table
+    RSS_ENABLED: bool = os.getenv("RSS_ENABLED", "True").lower() == "true"
+
+    # Safety cap on how many companies a single monitoring run processes.
+    # With large company lists this keeps a run's duration and API usage
+    # bounded; tiered scheduling (see scheduler.py) decides which companies
+    # are actually due, this is just a hard ceiling per run.
+    MAX_COMPANIES_PER_RUN: int = int(os.getenv("MAX_COMPANIES_PER_RUN", "200"))
 
     # Scheduler
     SCHEDULER_ENABLED: bool = os.getenv("SCHEDULER_ENABLED", "True").lower() == "true"

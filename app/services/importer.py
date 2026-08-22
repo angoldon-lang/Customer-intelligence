@@ -36,9 +36,12 @@ class DataImporter:
             Dict with parsed companies and metadata
         """
         if filename.endswith(".xlsx") or filename.endswith(".xls"):
-            df = pd.read_excel(io.BytesIO(file_content))
+            # dtype=str keeps numeric-looking columns (P.IVA, codice fiscale,
+            # CAP with leading zeros) as text instead of pandas silently
+            # casting them to float and mangling/truncating the digits.
+            df = pd.read_excel(io.BytesIO(file_content), dtype=str)
         elif filename.endswith(".csv"):
-            df = pd.read_csv(io.BytesIO(file_content), encoding="utf-8")
+            df = pd.read_csv(io.BytesIO(file_content), encoding="utf-8", dtype=str)
         else:
             raise ValueError(f"Unsupported file format: {filename}")
 
@@ -93,16 +96,31 @@ class DataImporter:
         return result
 
     def _remove_duplicate_headers(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Remove rows that are duplicate headers."""
-        if len(df) <= 1:
+        """Remove data rows that just repeat the column header names.
+
+        Some Excel exports embed the header line again as a data row
+        (e.g. copy-pasted sheets). Compare against the real column names,
+        not against the first data row - comparing to df.iloc[0] would
+        always match row 0 against itself and silently drop it.
+        """
+        if len(df) == 0:
             return df
 
-        header_row = df.iloc[0]
-        # Find rows that match the header (duplicate headers)
-        mask = df.apply(lambda x: (x == header_row).all(), axis=1)
-        # Keep only rows that are NOT duplicate headers
-        df = df[~mask].reset_index(drop=True)
-        return df
+        header_values = [str(c).strip() for c in df.columns]
+
+        def is_header_row(row) -> bool:
+            return [self._clean_value(v) or "" for v in row.tolist()] == header_values
+
+        mask = df.apply(is_header_row, axis=1)
+        return df[~mask].reset_index(drop=True)
+
+    @staticmethod
+    def _clean_value(value: Any) -> str | None:
+        """Convert a pandas cell to a clean string, treating NaN/empty as None."""
+        if pd.isna(value):
+            return None
+        text = str(value).strip()
+        return text or None
 
     def _process_row(self, row: pd.Series) -> Dict[str, Any] | None:
         """
@@ -112,20 +130,20 @@ class DataImporter:
             Company dict or None if row is invalid
         """
         # Check required field
-        company_name = str(row.get("Ragione Sociale", "")).strip()
-        if not company_name or company_name.lower() == "nan":
+        company_name = self._clean_value(row.get("Ragione Sociale"))
+        if not company_name:
             return None
 
         company = {
             "company_name": company_name,
-            "relationship_type": str(row.get("Tipo", "Unknown")).strip() or "Unknown",
-            "status": str(row.get("Stato", "Unknown")).strip() or "Unknown",
-            "internal_customer_code": str(row.get("Codice Cliente", "")).strip() or None,
-            "company_email": str(row.get("E-Mail", "")).strip() or None,
-            "ateco_description": str(row.get("Codice Ateco", "")).strip() or None,
-            "tax_code": str(row.get("Codice Fiscale", "")).strip() or None,
-            "website": str(row.get("Sito Web", "")).strip() or None,
-            "account_owner": str(row.get("Referente Commerciale", "")).strip() or None,
+            "relationship_type": self._clean_value(row.get("Tipo")) or "Unknown",
+            "status": self._clean_value(row.get("Stato")) or "Unknown",
+            "internal_customer_code": self._clean_value(row.get("Codice Cliente")),
+            "company_email": self._clean_value(row.get("E-Mail")),
+            "ateco_description": self._clean_value(row.get("Codice Ateco")),
+            "tax_code": self._clean_value(row.get("Codice Fiscale")),
+            "website": self._clean_value(row.get("Sito Web")),
+            "account_owner": self._clean_value(row.get("Referente Commerciale")),
             "enrichment_status": "pending",
         }
 

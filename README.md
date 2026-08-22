@@ -85,6 +85,17 @@ Aggiungi la chiave Claude API:
 CLAUDE_API_KEY=sk-ant-YOUR_API_KEY_HERE
 ```
 
+Opzionale ma consigliato per una ricerca notizie reale (senza, il sistema
+usa solo GDELT, gratuito ma senza snippet): registrati su
+[gnews.io](https://gnews.io) e aggiungi la chiave:
+```env
+GNEWS_API_KEY=YOUR_GNEWS_KEY_HERE
+```
+Il piano gratuito GNews (100 richieste/giorno) è pensato per lo sviluppo;
+per un uso continuativo su molte aziende serve un piano a pagamento — vedi
+"Architettura ricerca notizie" più sotto per i dettagli su costi e
+schedulazione a livelli.
+
 Salva con `Ctrl+O`, `Enter`, `Ctrl+X`
 
 ### 3. Inizializzare database
@@ -185,35 +196,114 @@ La dashboard è completamente funzionante con **6 pagine principali**:
 - **Filtri di default** aziende e notizie
 - Info sistema (versione, database, roadmap)
 
+## Architettura ricerca notizie
+
+Il flusso è pensato per dare a Claude solo un pacchetto strutturato per
+notizia (titolo, fonte, url, data, snippet), mai il contenuto integrale del
+web: la ricerca/estrazione è compito dei provider, Claude fa solo la parte
+"intelligente" (capire se riguarda davvero l'azienda, sintetizzare,
+classificare, dare un punteggio, suggerire un'azione).
+
+```
+GDELT (gratuito) + GNews.io + RSS/fonti ufficiali
+        ↓
+estrazione titolo, fonte, url, data, snippet (mai il testo integrale)
+        ↓
+deduplica (per URL, tra provider e contro il database)
+        ↓
+invio del pacchetto strutturato a Claude
+        ↓
+Claude valuta pertinenza, sintetizza, classifica, assegna punteggi
+        ↓
+generazione report email per cluster
+```
+
+### Provider disponibili
+
+| Provider | Costo | Cosa fornisce | Config |
+|---|---|---|---|
+| **GDELT** (`app/providers/gdelt.py`) | Gratuito, nessuna chiave | Copertura ampia: titolo, url, dominio, data. Nessuno snippet. | Attivo di default (`GDELT_ENABLED=True`) |
+| **GNews.io** (`app/providers/gnews.py`) | Piano gratuito 100 richieste/giorno (solo dev secondo il loro ToS), piani a pagamento per produzione | Validazione/copertura aggiuntiva con snippet (`description`) | `GNEWS_API_KEY` in `.env` |
+| **RSS ufficiali** (`app/providers/rss.py`) | Gratuito | Comunicati stampa/IR direttamente dal sito dell'azienda, la fonte più affidabile | Configurabile da Impostazioni → "Fonti notizie", o via `POST /api/news-sources` |
+
+Se nessun provider è configurabile/raggiungibile, il sistema usa
+`TestNewsProvider` (dati di esempio) così la pipeline resta testabile.
+
+### Aziende ambigue (es. "AR Group", "ASA SRL", "ARMANDO SRL")
+
+Le aziende senza sito web e senza P.IVA/codice fiscale in anagrafica, o con
+`enrichment_status = needs_review`, **non vengono cercate automaticamente**:
+una ricerca su un nome generico produrrebbe solo falsi positivi. Vengono
+contate in `companies_needing_enrichment` nel risultato del monitoraggio
+invece di essere processate. Arricchisci l'azienda con sito web o P.IVA
+(pagina Aziende) per farla rientrare nel monitoraggio automatico.
+
+Per le aziende identificate, sito web e P.IVA vengono comunque passati a
+Claude come contesto di disambiguazione: se una notizia potrebbe riguardare
+un omonimo, `confidence_score` viene abbassato invece di essere scartata in
+silenzio, così resta visibile per una verifica manuale nella pagina Notizie.
+
+Un fallback SERP (es. SerpAPI/DataForSEO) per le aziende ambigue/prioritarie
+è previsto come step successivo (Fase 4), da valutare in base ai risultati
+misurati nelle prime settimane d'uso.
+
+### Schedulazione per priorità (tiering sui cluster)
+
+La frequenza di ricerca non è più uguale per tutte le aziende: si eredita
+dal campo "Frequenza report" del cluster (pagina Cluster), con la logica
+"un'azienda in più cluster eredita la frequenza più alta":
+
+| Frequenza cluster | Intervallo di ricerca |
+|---|---|
+| `daily` | ogni 24 ore |
+| `2-3x_week` | ogni ~60 ore (2-3 volte/settimana) |
+| `weekly` (default) | ogni 7 giorni |
+| `monthly` | ogni 30 giorni |
+
+Un'azienda senza cluster attivo usa il default settimanale. Ad ogni run il
+sistema calcola le aziende "scadute" (mai controllate, o oltre il loro
+intervallo) e processa al massimo `MAX_COMPANIES_PER_RUN` (default 200,
+configurabile in `.env`) partendo dalle più scadute — un limite di
+sicurezza per non far esplodere durata/quota API con migliaia di aziende in
+anagrafica.
+
+Esempio di impostazione consigliata:
+
+| Cluster aziende | Frequenza da impostare |
+|---|---|
+| Top clienti strategici | `daily` |
+| Clienti normali | `2-3x_week` |
+| Long tail / fornitori | `weekly` |
+
 ## Roadmap
 
-### Fase 1 - MVP (in progress)
+### Fase 1 - MVP
 - [x] Struttura progetto
-- [ ] Database e modelli
-- [ ] Import Excel/CSV
-- [ ] CRUD aziende e cluster
-- [ ] Provider news mock
-- [ ] Classificazione AI base
-- [ ] Generazione report draft
-- [ ] Dashboard minimale
+- [x] Database e modelli
+- [x] Import Excel/CSV
+- [x] CRUD aziende e cluster
+- [x] Provider news mock
+- [x] Classificazione AI base
+- [x] Generazione report draft
+- [x] Dashboard minimale
 
 ### Fase 2 - Ricerca reale
-- [ ] Provider web reale
-- [ ] RSS feed
-- [ ] Deduplica notizie
-- [ ] Scoring AI completo
-- [ ] Scheduler di monitoraggio
+- [x] Provider web reale (GDELT + GNews.io)
+- [x] RSS feed (fonti ufficiali configurabili)
+- [x] Deduplica notizie (per URL, tra provider e contro il DB)
+- [x] Scoring AI completo con disambiguazione (sito web/P.IVA)
+- [x] Scheduler di monitoraggio con tiering per cluster
 
 ### Fase 3 - Automazione
-- [ ] Invio email automatico
+- [x] Invio email automatico
 - [ ] Approvazione report
 - [ ] Alert critici
 - [ ] Report per account owner
 
 ### Fase 4 - Fonti premium
-- [ ] Source connector layer completo
-- [ ] Integrazione API autorizzate
-- [ ] Gestione access_status e license_scope
+- [ ] Fallback SERP (SerpAPI/DataForSEO) per aziende ambigue/prioritarie
+- [ ] Integrazione API autorizzate aggiuntive (es. TheNewsAPI, GNews Enterprise)
+- [ ] Gestione access_status e license_scope avanzata
 
 ## Design dashboard
 

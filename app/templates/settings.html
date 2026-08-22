@@ -56,6 +56,29 @@
     </div>
 
     <div class="card">
+        <h3>📡 Fonti notizie</h3>
+        <div id="providers-status" style="margin-bottom: 15px;">Caricamento stato fonti...</div>
+
+        <h4 style="margin-top: 20px; margin-bottom: 10px;">Fonti ufficiali RSS</h4>
+        <small style="color: #7f8c8d; display: block; margin-bottom: 10px;">
+            Feed RSS di comunicati stampa/investor relations aziendali (fonte più affidabile, nessuna API a pagamento).
+        </small>
+        <div id="rss-sources-list">Caricamento...</div>
+
+        <form id="rss-form" style="margin-top: 15px;">
+            <div class="form-group">
+                <label>Nome fonte</label>
+                <input type="text" id="rss-name" placeholder="es. Aquafil Investor Relations" required>
+            </div>
+            <div class="form-group">
+                <label>URL feed RSS</label>
+                <input type="url" id="rss-url" placeholder="https://www.example.com/rss.xml" required>
+            </div>
+            <button type="submit" class="btn btn-success">➕ Aggiungi fonte RSS</button>
+        </form>
+    </div>
+
+    <div class="card">
         <h3>Scheduler monitoraggio</h3>
         <div id="scheduler-status" style="padding: 12px; background: #fff3cd; border-radius: 4px; margin-bottom: 15px; color: #856404;">
             Caricamento stato...
@@ -191,6 +214,85 @@
         alert('Test API sarà implementato nella Fase 2. Verificherà la connessione con Claude API.');
     }
 
+    async function loadProvidersStatus() {
+        try {
+            const response = await fetch('/api/monitoring/providers');
+            const data = await response.json();
+
+            const badge = (ok, label) => `<span class="badge ${ok ? 'badge-success' : 'badge-warning'}" style="margin-right: 8px;">${ok ? '✓' : '⚠'} ${label}</span>`;
+
+            document.getElementById('providers-status').innerHTML =
+                badge(data.gdelt.enabled, 'GDELT (gratuito)') +
+                badge(data.gnews.enabled, data.gnews.enabled ? 'GNews.io' : 'GNews.io (manca GNEWS_API_KEY in .env)') +
+                badge(data.rss.enabled, `RSS ufficiali (${data.rss.active_feeds} attivi)`);
+        } catch (error) {
+            console.error('Error loading providers status:', error);
+        }
+    }
+
+    async function loadRSSSources() {
+        try {
+            const response = await fetch('/api/news-sources');
+            const data = await response.json();
+
+            const listDiv = document.getElementById('rss-sources-list');
+            if (data.sources.length === 0) {
+                listDiv.innerHTML = '<p style="color: #7f8c8d;">Nessuna fonte RSS configurata.</p>';
+                return;
+            }
+
+            listDiv.innerHTML = data.sources.map(s => `
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #eee;">
+                    <div>
+                        <strong>${s.source_name}</strong><br>
+                        <small style="color: #7f8c8d;">${s.base_url}</small>
+                    </div>
+                    <div>
+                        <button type="button" class="btn btn-sm ${s.enabled ? 'btn-success' : 'btn-danger'}" onclick="toggleRSSSource(${s.id})">${s.enabled ? 'Attiva' : 'Disattiva'}</button>
+                        <button type="button" class="btn btn-sm btn-danger" onclick="deleteRSSSource(${s.id})">🗑️</button>
+                    </div>
+                </div>
+            `).join('');
+        } catch (error) {
+            console.error('Error loading RSS sources:', error);
+        }
+    }
+
+    async function toggleRSSSource(id) {
+        await fetch(`/api/news-sources/${id}/toggle`, { method: 'POST' });
+        loadRSSSources();
+        loadProvidersStatus();
+    }
+
+    async function deleteRSSSource(id) {
+        if (!confirm('Rimuovere questa fonte RSS?')) return;
+        await fetch(`/api/news-sources/${id}`, { method: 'DELETE' });
+        loadRSSSources();
+        loadProvidersStatus();
+    }
+
+    document.getElementById('rss-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const name = document.getElementById('rss-name').value;
+        const url = document.getElementById('rss-url').value;
+
+        try {
+            const response = await fetch(`/api/news-sources?source_name=${encodeURIComponent(name)}&base_url=${encodeURIComponent(url)}&source_type=rss`, {
+                method: 'POST'
+            });
+            if (response.ok) {
+                document.getElementById('rss-form').reset();
+                loadRSSSources();
+                loadProvidersStatus();
+            } else {
+                const err = await response.json();
+                alert('Errore: ' + (err.detail || 'impossibile aggiungere la fonte'));
+            }
+        } catch (error) {
+            alert('Errore: ' + error.message);
+        }
+    });
+
     async function testSMTP() {
         alert('Test SMTP sarà implementato nella Fase 3. Invierà un email di test.');
     }
@@ -263,7 +365,7 @@
                 statusDiv.innerHTML = `✓ Monitoraggio completato! ${data.news_saved} notizie salvate`;
                 statusDiv.style.background = '#d4edda';
                 statusDiv.style.color = '#155724';
-                alert(`Monitoraggio completato:\n- Aziende controllate: ${data.companies_checked}\n- Notizie trovate: ${data.news_found}\n- Notizie salvate: ${data.news_saved}`);
+                alert(`Monitoraggio completato:\n- Aziende controllate: ${data.companies_checked}\n- Aziende saltate (da arricchire con sito/P.IVA): ${data.companies_needing_enrichment || 0}\n- Notizie trovate: ${data.news_found}\n- Notizie salvate: ${data.news_saved}`);
             } else {
                 alert('Errore nell\'esecuzione del monitoraggio');
                 checkSchedulerStatus();
@@ -310,6 +412,8 @@
     // Load status on page load
     checkAPIStatus();
     checkSchedulerStatus();
+    loadProvidersStatus();
+    loadRSSSources();
 
     // Refresh scheduler status every 10 seconds
     setInterval(checkSchedulerStatus, 10000);

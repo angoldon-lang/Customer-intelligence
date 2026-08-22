@@ -30,10 +30,12 @@
             <div class="form-group">
                 <label>Frequenza report</label>
                 <select id="cluster-frequency">
-                    <option>daily</option>
-                    <option>weekly</option>
-                    <option>monthly</option>
+                    <option value="daily">daily - controllo notizie ogni giorno (es. top clienti strategici)</option>
+                    <option value="2-3x_week">2-3x_week - controllo 2-3 volte a settimana (clienti normali)</option>
+                    <option value="weekly" selected>weekly - controllo settimanale (default, long tail/fornitori)</option>
+                    <option value="monthly">monthly - controllo mensile</option>
                 </select>
+                <small style="color: #7f8c8d;">Determina anche ogni quanto il monitoraggio ricerca notizie per le aziende di questo cluster, non solo la frequenza del report email.</small>
             </div>
 
             <div class="form-group">

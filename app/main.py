@@ -12,7 +12,7 @@ import os
 from app import __version__
 from app.config import settings
 from app.database import init_db, get_db
-from app.models import Company, Cluster, NewsItem, Report, MonitoringRun
+from app.models import Company, Cluster, NewsItem, Report, MonitoringRun, NewsSource
 from app.services import DataImporter, DataNormalizer, ClusterManager
 from app.services.classifier import NewsClassifier
 from app.services.reporter import ReportGenerator
@@ -43,6 +43,25 @@ templates = Jinja2Templates(directory="app/templates")
 if os.path.exists("app/static"):
     app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
+# starlette changed Jinja2Templates.TemplateResponse's signature from
+# (name, context) to (request, name, context) between versions. Calling it
+# the old way on a newer starlette silently misassigns arguments (the
+# context dict lands where `name` is expected), which surfaces deep inside
+# Jinja2 as a baffling "TypeError: unhashable type: 'dict'". Detect which
+# signature is installed once, so page routes work either way.
+import inspect as _inspect
+_template_response_params = list(_inspect.signature(templates.TemplateResponse).parameters)
+_REQUEST_FIRST = bool(_template_response_params) and _template_response_params[0] == "request"
+
+
+def render(request: Request, name: str, context: dict = None) -> HTMLResponse:
+    """Render a Jinja2 template, compatible with old and new starlette."""
+    context = dict(context or {})
+    if _REQUEST_FIRST:
+        return templates.TemplateResponse(request, name, context)
+    context["request"] = request
+    return templates.TemplateResponse(name, context)
+
 
 # ============================================================================
 # Page Routes - HTML Templates
@@ -51,7 +70,7 @@ if os.path.exists("app/static"):
 @app.get("/", response_class=HTMLResponse)
 def read_root(request: Request):
     """Root endpoint - dashboard."""
-    return templates.TemplateResponse("index.html", {"request": request})
+    return render(request, "index.html")
 
 
 @app.get("/api/health")
@@ -297,6 +316,7 @@ def run_monitoring_now(db: Session = Depends(get_db)):
     return {
         "status": "completed",
         "companies_checked": result.get('companies_checked', 0),
+        "companies_needing_enrichment": result.get('companies_needing_enrichment', 0),
         "news_found": result.get('news_found', 0),
         "news_saved": result.get('news_saved', 0),
         "errors": result.get('errors', [])
@@ -338,6 +358,88 @@ def get_monitoring_history(limit: int = 10, db: Session = Depends(get_db)):
             for r in runs
         ]
     }
+
+
+@app.get("/api/monitoring/providers")
+def get_providers_status(db: Session = Depends(get_db)):
+    """Report which news providers are active, for the settings page."""
+    rss_count = db.query(NewsSource).filter_by(source_type="rss", enabled=True).count()
+    return {
+        "gdelt": {"enabled": settings.GDELT_ENABLED, "requires_key": False},
+        "gnews": {"enabled": bool(settings.GNEWS_API_KEY), "requires_key": True},
+        "rss": {"enabled": settings.RSS_ENABLED and rss_count > 0, "active_feeds": rss_count},
+    }
+
+
+@app.get("/api/news-sources")
+def list_news_sources(db: Session = Depends(get_db)):
+    """List configured news sources (RSS/official feeds)."""
+    sources = db.query(NewsSource).order_by(NewsSource.priority).all()
+    return {
+        "total": len(sources),
+        "sources": [
+            {
+                "id": s.id,
+                "source_name": s.source_name,
+                "source_type": s.source_type,
+                "base_url": s.base_url,
+                "enabled": s.enabled,
+                "priority": s.priority,
+                "license_scope": s.license_scope,
+            }
+            for s in sources
+        ]
+    }
+
+
+@app.post("/api/news-sources")
+def create_news_source(
+    source_name: str,
+    base_url: str,
+    source_type: str = "rss",
+    priority: int = 100,
+    license_scope: str = "summary_allowed",
+    db: Session = Depends(get_db)
+):
+    """Add a news source (typically an official company/IR RSS feed)."""
+    existing = db.query(NewsSource).filter_by(source_name=source_name).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="A source with this name already exists")
+
+    source = NewsSource(
+        source_name=source_name,
+        source_type=source_type,
+        base_url=base_url,
+        enabled=True,
+        priority=priority,
+        license_scope=license_scope,
+    )
+    db.add(source)
+    db.commit()
+    db.refresh(source)
+    return {"id": source.id, "source_name": source.source_name, "message": "Source added successfully"}
+
+
+@app.post("/api/news-sources/{source_id}/toggle")
+def toggle_news_source(source_id: int, db: Session = Depends(get_db)):
+    """Enable/disable a news source."""
+    source = db.query(NewsSource).filter_by(id=source_id).first()
+    if not source:
+        raise HTTPException(status_code=404, detail="Source not found")
+    source.enabled = not source.enabled
+    db.commit()
+    return {"id": source.id, "enabled": source.enabled}
+
+
+@app.delete("/api/news-sources/{source_id}")
+def delete_news_source(source_id: int, db: Session = Depends(get_db)):
+    """Remove a news source."""
+    source = db.query(NewsSource).filter_by(id=source_id).first()
+    if not source:
+        raise HTTPException(status_code=404, detail="Source not found")
+    db.delete(source)
+    db.commit()
+    return {"message": "Source deleted"}
 
 
 # ============================================================================
@@ -444,43 +546,48 @@ def generate_report(
 @app.get("/upload", response_class=HTMLResponse)
 def upload_page(request: Request):
     """Upload page."""
-    return templates.TemplateResponse("upload.html", {"request": request})
+    return render(request, "upload.html")
 
 
 @app.get("/companies", response_class=HTMLResponse)
 def companies_page(request: Request):
     """Companies management page."""
-    return templates.TemplateResponse("companies.html", {"request": request})
+    return render(request, "companies.html")
 
 
 @app.get("/clusters", response_class=HTMLResponse)
 def clusters_page(request: Request):
     """Clusters configuration page."""
-    return templates.TemplateResponse("clusters.html", {"request": request})
+    return render(request, "clusters.html")
 
 
 @app.get("/news", response_class=HTMLResponse)
 def news_page(request: Request):
     """News management page."""
-    return templates.TemplateResponse("news.html", {"request": request})
+    return render(request, "news.html")
 
 
 @app.get("/reports", response_class=HTMLResponse)
 def reports_page(request: Request):
     """Reports management page."""
-    return templates.TemplateResponse("reports.html", {"request": request})
+    return render(request, "reports.html")
 
 
 @app.get("/settings", response_class=HTMLResponse)
 def settings_page(request: Request):
     """Settings page."""
-    return templates.TemplateResponse("settings.html", {"request": request})
+    return render(request, "settings.html")
 
 
+# /monitoring stays disabled: not a bug (the "unhashable dict" issue that
+# originally broke it was a starlette API mismatch in render(), now fixed
+# above for every page) - its controls were simply moved into Impostazioni
+# (/settings) to avoid a duplicate UI. app/templates/monitoring.html is
+# unused but left in place in case it's wanted back as a dedicated page.
 # @app.get("/monitoring", response_class=HTMLResponse)
 # def monitoring_page(request: Request):
 #     """Monitoring page."""
-#     return templates.TemplateResponse("monitoring.html", {"request": request})
+#     return render(request, "monitoring.html")
 
 
 if __name__ == "__main__":

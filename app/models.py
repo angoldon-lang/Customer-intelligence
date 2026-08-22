@@ -22,6 +22,7 @@ class Company(Base):
     website = Column(String(255))
     account_owner = Column(String(255))
     enrichment_status = Column(String(50), default="pending")  # pending, completed, needs_review
+    last_monitored_at = Column(DateTime)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

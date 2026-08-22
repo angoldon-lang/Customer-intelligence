@@ -1,13 +1,67 @@
-"""Automated monitoring scheduler."""
+"""Automated monitoring scheduler with cluster-tiered frequency."""
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from datetime import datetime
-from typing import Dict, Any
+from typing import Dict, Any, List
 from sqlalchemy.orm import Session
-from app.database import get_db, engine
-from app.models import MonitoringRun
+from app.database import engine
+from app.config import settings
+from app.models import MonitoringRun, Company, Cluster, CompanyCluster
 from app.services.news_searcher import NewsSearcher
+
+# How often each cluster frequency tier requires a re-check.
+FREQUENCY_HOURS = {
+    "daily": 24,
+    "2-3x_week": 60,
+    "weekly": 168,
+    "monthly": 720,
+}
+DEFAULT_FREQUENCY_HOURS = 168  # weekly, for companies with no active cluster
+
+
+def get_due_companies(db: Session, limit: int = None) -> List[Company]:
+    """
+    Return active companies due for a news check, most-overdue first.
+
+    A company's check interval is the shortest (most frequent) tier among
+    the active clusters it belongs to (e.g. a top-client cluster set to
+    "daily" wins over a "weekly" sector cluster for the same company).
+    Companies in no active cluster default to weekly.
+    """
+    rows = (
+        db.query(CompanyCluster.company_id, Cluster.frequency)
+        .join(Cluster, Cluster.id == CompanyCluster.cluster_id)
+        .filter(Cluster.active == True)
+        .all()
+    )
+
+    interval_by_company = {}
+    for company_id, frequency in rows:
+        hours = FREQUENCY_HOURS.get(frequency, DEFAULT_FREQUENCY_HOURS)
+        if company_id not in interval_by_company or hours < interval_by_company[company_id]:
+            interval_by_company[company_id] = hours
+
+    companies = db.query(Company).filter_by(status="Attiva").all()
+    now = datetime.utcnow()
+    due = []
+
+    for company in companies:
+        interval_hours = interval_by_company.get(company.id, DEFAULT_FREQUENCY_HOURS)
+        if company.last_monitored_at is None:
+            due.append((company, datetime.min))
+            continue
+        elapsed_hours = (now - company.last_monitored_at).total_seconds() / 3600
+        if elapsed_hours >= interval_hours:
+            due.append((company, company.last_monitored_at))
+
+    due.sort(key=lambda pair: pair[1])
+    companies_due = [c for c, _ in due]
+
+    if limit:
+        companies_due = companies_due[:limit]
+
+    return companies_due
 
 
 class MonitoringScheduler:
@@ -23,7 +77,6 @@ class MonitoringScheduler:
         if self.is_running:
             return
 
-        # Schedule monitoring job
         self.scheduler.add_job(
             self._monitoring_job,
             trigger=IntervalTrigger(hours=interval_hours),
@@ -43,71 +96,55 @@ class MonitoringScheduler:
             self.is_running = False
             print("Monitoring scheduler stopped")
 
+    def _run(self, db: Session) -> Dict[str, Any]:
+        start_time = datetime.utcnow()
+
+        due_companies = get_due_companies(db, limit=settings.MAX_COMPANIES_PER_RUN)
+        result = self.searcher.monitor_all_companies(db, companies=due_companies)
+
+        end_time = datetime.utcnow()
+
+        monitoring_run = MonitoringRun(
+            started_at=start_time,
+            finished_at=end_time,
+            companies_processed=result['companies_checked'],
+            news_found=result['news_found'],
+            status='Completed',
+            errors_count=len(result['errors']) if result['errors'] else 0,
+        )
+        db.add(monitoring_run)
+        db.commit()
+
+        print(
+            f"[{end_time}] Monitoring completed: {result['companies_checked']} companies checked, "
+            f"{result['news_saved']} news items saved, "
+            f"{result['companies_needing_enrichment']} skipped (need enrichment)"
+        )
+
+        return result
+
     def _monitoring_job(self):
         """Monitoring job executed periodically."""
+        from sqlalchemy.orm import sessionmaker
+        SessionFactory = sessionmaker(bind=engine)
+        db = SessionFactory()
+
         try:
-            # Create a session
-            from sqlalchemy.orm import sessionmaker
-            Session = sessionmaker(bind=engine)
-            db = Session()
-
-            start_time = datetime.utcnow()
-
-            # Run the monitoring
-            result = self.searcher.monitor_all_companies(db)
-
-            end_time = datetime.utcnow()
-
-            # Save monitoring run record
-            monitoring_run = MonitoringRun(
-                started_at=start_time,
-                finished_at=end_time,
-                companies_processed=result['companies_checked'],
-                news_found=result['news_found'],
-                status='Completed',
-                errors_count=len(result['errors']) if result['errors'] else 0,
-            )
-
-            db.add(monitoring_run)
-            db.commit()
-            db.close()
-
-            print(f"[{end_time}] Monitoring completed: {result['news_saved']} news items saved")
-
+            self._run(db)
         except Exception as e:
             print(f"Error in monitoring job: {e}")
-            try:
-                db.rollback()
-                db.close()
-            except:
-                pass
+            db.rollback()
+        finally:
+            db.close()
 
     def run_once(self) -> Dict[str, Any]:
         """Run monitoring immediately."""
         from sqlalchemy.orm import sessionmaker
-        Session = sessionmaker(bind=engine)
-        db = Session()
+        SessionFactory = sessionmaker(bind=engine)
+        db = SessionFactory()
 
         try:
-            start_time = datetime.utcnow()
-            result = self.searcher.monitor_all_companies(db)
-            end_time = datetime.utcnow()
-
-            # Save monitoring run
-            monitoring_run = MonitoringRun(
-                started_at=start_time,
-                finished_at=end_time,
-                companies_processed=result['companies_checked'],
-                news_found=result['news_found'],
-                status='Completed',
-                errors_count=len(result['errors']) if result['errors'] else 0,
-            )
-
-            db.add(monitoring_run)
-            db.commit()
-
-            return result
-
+            return self._run(db)
         finally:
             db.close()
 
