@@ -128,8 +128,8 @@
             }
 
             // Update stats
-            if (data.last_run) {
-                document.getElementById('last-run').textContent = new Date(data.last_run.completed_at).toLocaleString('it-IT');
+            if (data.last_run && data.last_run.finished_at) {
+                document.getElementById('last-run').textContent = new Date(data.last_run.finished_at).toLocaleString('it-IT');
                 document.getElementById('checked-companies').textContent = data.last_run.companies_checked;
                 document.getElementById('found-news').textContent = data.last_run.news_found;
                 document.getElementById('saved-news').textContent = data.last_run.news_saved;
@@ -158,7 +158,7 @@
             emptyState.style.display = 'none';
             tbody.innerHTML = data.runs.map(r => `
                 <tr>
-                    <td>${new Date(r.completed_at).toLocaleString('it-IT')}</td>
+                    <td>${new Date(r.finished_at).toLocaleString('it-IT')}</td>
                     <td>${r.companies_checked}</td>
                     <td>${r.news_found}</td>
                     <td>${r.news_saved}</td>

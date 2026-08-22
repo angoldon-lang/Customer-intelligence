@@ -298,15 +298,15 @@ def run_monitoring_now(db: Session = Depends(get_db)):
 @app.get("/api/monitoring/status")
 def get_monitoring_status(db: Session = Depends(get_db)):
     """Get monitoring status."""
-    last_run = db.query(MonitoringRun).order_by(MonitoringRun.completed_at.desc()).first()
+    last_run = db.query(MonitoringRun).order_by(MonitoringRun.finished_at.desc()).first()
 
     return {
         "is_running": monitoring_scheduler.is_running,
         "last_run": {
-            "completed_at": last_run.completed_at.isoformat() if last_run else None,
-            "companies_checked": last_run.companies_checked if last_run else 0,
+            "finished_at": last_run.finished_at.isoformat() if last_run else None,
+            "companies_checked": last_run.companies_processed if last_run else 0,
             "news_found": last_run.news_found if last_run else 0,
-            "news_saved": last_run.news_saved if last_run else 0,
+            "news_saved": last_run.news_found if last_run else 0,
             "status": last_run.status if last_run else "Never run",
         } if last_run else {}
     }
@@ -315,16 +315,16 @@ def get_monitoring_status(db: Session = Depends(get_db)):
 @app.get("/api/monitoring/history")
 def get_monitoring_history(limit: int = 10, db: Session = Depends(get_db)):
     """Get monitoring run history."""
-    runs = db.query(MonitoringRun).order_by(MonitoringRun.completed_at.desc()).limit(limit).all()
+    runs = db.query(MonitoringRun).order_by(MonitoringRun.finished_at.desc()).limit(limit).all()
 
     return {
         "total": len(runs),
         "runs": [
             {
-                "completed_at": r.completed_at.isoformat(),
-                "companies_checked": r.companies_checked,
+                "finished_at": r.finished_at.isoformat() if r.finished_at else None,
+                "companies_checked": r.companies_processed,
                 "news_found": r.news_found,
-                "news_saved": r.news_saved,
+                "news_saved": r.news_found,
                 "status": r.status,
             }
             for r in runs

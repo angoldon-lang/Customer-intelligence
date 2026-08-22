@@ -61,12 +61,11 @@ class MonitoringScheduler:
             # Save monitoring run record
             monitoring_run = MonitoringRun(
                 started_at=start_time,
-                completed_at=end_time,
-                companies_checked=result['companies_checked'],
+                finished_at=end_time,
+                companies_processed=result['companies_checked'],
                 news_found=result['news_found'],
-                news_saved=result['news_saved'],
                 status='Completed',
-                error_message='; '.join(result['errors']) if result['errors'] else None,
+                errors_count=len(result['errors']) if result['errors'] else 0,
             )
 
             db.add(monitoring_run)
@@ -97,12 +96,11 @@ class MonitoringScheduler:
             # Save monitoring run
             monitoring_run = MonitoringRun(
                 started_at=start_time,
-                completed_at=end_time,
-                companies_checked=result['companies_checked'],
+                finished_at=end_time,
+                companies_processed=result['companies_checked'],
                 news_found=result['news_found'],
-                news_saved=result['news_saved'],
                 status='Completed',
-                error_message='; '.join(result['errors']) if result['errors'] else None,
+                errors_count=len(result['errors']) if result['errors'] else 0,
             )
 
             db.add(monitoring_run)
