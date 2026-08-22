@@ -469,10 +469,10 @@ def settings_page(request: Request):
     return templates.TemplateResponse("settings.html", {"request": request})
 
 
-@app.get("/monitoring", response_class=HTMLResponse)
-def monitoring_page(request: Request):
-    """Monitoring page."""
-    return templates.TemplateResponse("monitoring.html", {"request": request})
+# @app.get("/monitoring", response_class=HTMLResponse)
+# def monitoring_page(request: Request):
+#     """Monitoring page."""
+#     return templates.TemplateResponse("monitoring.html", {"request": request})
 
 
 if __name__ == "__main__":
