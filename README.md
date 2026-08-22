@@ -48,35 +48,76 @@ Costruire un agente software che monitori notizie e informazioni pubbliche relat
 └── README.md
 ```
 
-## Quick start
+## Quick start - macOS
 
-1. **Clone e setup**
-   ```bash
-   git clone <repo>
-   cd Customer-intelligence
-   python -m venv venv
-   source venv/bin/activate
-   pip install -r requirements.txt
-   ```
+### 1. Setup iniziale
 
-2. **Database**
-   ```bash
-   python -c "from app.database import init_db; init_db()"
-   ```
+```bash
+# Installare Python 3.11
+brew install python@3.11
 
-3. **Configurazione**
-   - Copiare `.env.example` a `.env`
-   - Impostare `CLAUDE_API_KEY` per classificazione AI
+# Clonare repository
+cd ~/Projects
+git clone https://github.com/angoldon-lang/Customer-intelligence.git
+cd Customer-intelligence
 
-4. **Avvio**
-   ```bash
-   uvicorn app.main:app --reload
-   ```
+# Creare virtual environment
+/opt/homebrew/bin/python3.11 -m venv venv
+source venv/bin/activate
 
-5. **Accesso dashboard**
-   - http://localhost:8000
+# Installare dipendenze
+pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+### 2. Configurazione
+
+```bash
+# Copiare env file
+cp .env.example .env
+
+# Editare e aggiungere API key
+nano .env
+```
+
+Aggiungi la chiave Claude API:
+```env
+CLAUDE_API_KEY=sk-ant-YOUR_API_KEY_HERE
+```
+
+Salva con `Ctrl+O`, `Enter`, `Ctrl+X`
+
+### 3. Inizializzare database
+
+```bash
+python3 << 'EOF'
+from app.database import init_db
+init_db()
+EOF
+```
+
+### 4. Avviare applicazione
+
+**Usa una porta disponibile** (se 8000 è già occupata):
+
+```bash
+# Porta 8001
+uvicorn app.main:app --reload --port 8001
+
+# Oppure 8080, 3000, 5000, etc.
+uvicorn app.main:app --reload --port 8080
+```
+
+### 5. Accesso dashboard
+
+Apri il browser:
+```
+http://localhost:8001
+```
 
 ## Workflow
+
+**Flusso principale di utilizzo:**
 
 1. Import Excel/CSV anagrafica
 2. Pulizia e normalizzazione dati
@@ -86,6 +127,63 @@ Costruire un agente software che monitori notizie e informazioni pubbliche relat
 6. Classificazione AI
 7. Generazione report draft
 8. Approvazione e invio
+
+## Dashboard - Pagine disponibili
+
+La dashboard è completamente funzionante con **6 pagine principali**:
+
+### 📊 Dashboard principale
+- Statistiche in tempo reale (aziende, cluster, notizie, report)
+- Ultime notizie trovate
+- Ultimi report generati
+- Azioni rapide
+
+### 📁 Import dati
+- **Drag & drop** file Excel/CSV
+- Preview e validazione dati
+- Rilevamento duplicati
+- Rapporto risultati importazione
+- Supporto formati: `.xlsx`, `.xls`, `.csv`
+
+### 🏢 Gestione aziende
+- Tabella completa con ricerca
+- Filtri per stato (Active, Paused, Needs Review, Archived)
+- Visualizza sito web, email, account owner
+- Edit aziende (Fase 2)
+- Delete aziende (Fase 2)
+
+### 📈 Configurazione cluster
+- **Crea cluster manualmente** con frequenza e filtri rilevanza
+- **Crea cluster automaticamente** da:
+  - Account Owner
+  - Tipo azienda (Cliente, Fornitore, etc.)
+  - Settore (Codice Ateco)
+- Aggiungi/rimuovi destinatari email
+- Visualizza aziende associate
+
+### 📰 Gestione notizie
+- Tabella notizie con filtri:
+  - **Status**: Nuove, Approvate, Rifiutate, Da verificare
+  - **Categoria**: Investment, M&A, Cybersecurity, IT/Digital, etc.
+  - **Rilevanza minima**: 1-10
+- Visualizza source, data, categoria
+- Approva/rifiuta notizie (Fase 2)
+- Link diretto all'articolo
+
+### 📧 Report email
+- **Genera report** per cluster selezionato
+- Scegli giorni da includere (1-90)
+- Anteprima report HTML
+- Status: Draft, Pending Approval, Sent
+- Invio email (Fase 3)
+- Storico report completo
+
+### ⚙️ Impostazioni
+- Configurazione **API Claude**
+- Configurazione **SMTP** (Gmail, Outlook, etc.)
+- **Scheduler** monitoraggio automatico
+- **Filtri di default** aziende e notizie
+- Info sistema (versione, database, roadmap)
 
 ## Roadmap
 
@@ -116,6 +214,36 @@ Costruire un agente software che monitori notizie e informazioni pubbliche relat
 - [ ] Source connector layer completo
 - [ ] Integrazione API autorizzate
 - [ ] Gestione access_status e license_scope
+
+## Design dashboard
+
+La dashboard è costruita con:
+- **Backend**: FastAPI + Jinja2 templates
+- **Frontend**: HTML5 + CSS3 moderno + JavaScript vanilla
+- **Styling**: CSS moderno con:
+  - Sidebar navigazione fisso (250px)
+  - Layout responsive (desktop, tablet, mobile)
+  - Badge colorate per categorie e status
+  - Modal dialog per dettagli
+  - Grid layout per card statistiche
+  - Smooth transitions e hover effects
+
+### Colori del sistema
+- **Primario**: #3498db (blu) - Link, pulsanti primari
+- **Success**: #27ae60 (verde) - Approva, crea
+- **Danger**: #e74c3c (rosso) - Elimina, rifiuta
+- **Warning**: #f39c12 (arancio) - Da verificare
+- **Dark**: #2c3e50 (grigio scuro) - Header sidebar
+
+### Componenti UI
+- Tabelle con hover effects
+- Search box con input filtering
+- Select dropdown per filtri
+- Form validation lato client
+- Health status badge
+- Empty states con messaggi
+- Loading indicators
+- Alert boxes (success, danger, warning)
 
 ## Sviluppo
 
