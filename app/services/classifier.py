@@ -25,7 +25,7 @@ class NewsClassifier:
     ]
 
     def __init__(self):
-        self.client = Anthropic()
+        self.client = Anthropic() if settings.CLAUDE_API_KEY else None
 
     def classify_news(
         self,
@@ -45,6 +45,21 @@ class NewsClassifier:
         """
         if not article_text:
             article_text = "(Content not available)"
+
+        if not self.client:
+            # No API key configured: return a neutral default classification
+            return {
+                "summary": title[:200],
+                "category": "Commercial Signal",
+                "relevance_score": 5,
+                "urgency_score": 5,
+                "commercial_score": 5,
+                "risk_score": 5,
+                "confidence_score": 3,
+                "why_it_matters": "AI classification not available (no API key configured)",
+                "suggested_action": "Configure Claude API key for AI-based classification",
+                "email_ready_summary": title[:150],
+            }
 
         prompt = f"""Sei un analista di customer intelligence per una società di consulenza IT.
 

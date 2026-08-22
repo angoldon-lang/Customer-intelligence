@@ -7,21 +7,40 @@ from bs4 import BeautifulSoup
 from sqlalchemy.orm import Session
 from app.models import Company, NewsItem, NewsSource
 from app.services.classifier import NewsClassifier
+from app.providers.test import TestNewsProvider  # Use test provider for now
 
 
 class NewsSearcher:
     """Search for news and classify by relevance."""
 
-    def __init__(self):
+    def __init__(self, use_test_provider: bool = True):
         self.classifier = NewsClassifier()
+        # Use test provider by default for development/testing
+        if use_test_provider:
+            self.test_provider = TestNewsProvider()
+        else:
+            self.test_provider = None
 
     def search_company_news(self, company: Company) -> List[Dict[str, Any]]:
         """Search news for a specific company."""
         news_items = []
 
-        # Search from multiple sources
-        news_from_google = self._search_google_news(company.company_name)
-        news_items.extend(news_from_google)
+        # Use test provider first (for development/testing)
+        if self.test_provider:
+            test_articles = self.test_provider.search_company_news(company.company_name)
+            for article in test_articles:
+                news_items.append({
+                    'title': article.title,
+                    'url': article.url,
+                    'source_name': article.source_name,
+                    'published_date': article.published_date,
+                    'summary': article.summary,
+                    'company_name': company.company_name,
+                })
+
+        # Also try Google News (will fail due to proxy but keeping for future)
+        # news_from_google = self._search_google_news(company.company_name)
+        # news_items.extend(news_from_google)
 
         return news_items
 
@@ -90,9 +109,11 @@ class NewsSearcher:
 
             # Classify with AI
             classification = self.classifier.classify_news(
+                company_name=company.company_name,
                 title=news_data['title'],
-                summary=news_data.get('summary', ''),
-                company_name=company.company_name
+                url=news_data['url'],
+                source_name=news_data['source_name'],
+                article_text=news_data.get('summary', ''),
             )
 
             # Create news item
