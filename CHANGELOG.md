@@ -4,6 +4,30 @@ Tutte le modifiche rilevanti a questo progetto sono documentate in questo file.
 Il formato segue [Keep a Changelog](https://keepachangelog.com/) e il progetto
 usa [Semantic Versioning](https://semver.org/lang/it/).
 
+## [0.5.1] - 2026-08-23
+
+### Fixed
+- **Bug critico che rompeva SEMPRE la classificazione AI**: `requirements.txt`
+  pinnava `anthropic==0.7.1`, una versione della SDK precedente
+  all'introduzione della Messages API - ha solo `client.completions`, non
+  `client.messages`, da cui l'errore `'Anthropic' object has no attribute
+  'messages'` su ogni singola notizia trovata. Aggiornato a `anthropic==1.0.0`.
+- Il modello Claude usato per la classificazione (`claude-3-5-sonnet-20241022`)
+  è una snapshot ormai ritirata; aggiornato a `claude-sonnet-5` (il livello
+  Sonnet corrente, coerente con la scelta originale di un modello economico
+  per un volume alto di classificazioni).
+- **Bug critico separato, probabilmente la causa reale per chi aveva già
+  configurato la chiave**: `Anthropic()` veniva istanziato senza argomenti,
+  che legge automaticamente solo la variabile nativa della SDK
+  `ANTHROPIC_API_KEY` - ma le nostre istruzioni di setup (`.env.example`,
+  README, pagina Impostazioni) dicono di usare `CLAUDE_API_KEY`. Chi aveva
+  configurato solo quella non stava mai autenticando davvero. Ora la chiave
+  viene passata esplicitamente al client.
+- Aggiunto `thinking: disabled` alle chiamate di classificazione (compito
+  semplice e strutturato, il thinking adattivo di default su Sonnet 5
+  aggiungeva solo costo/latenza) ed estrazione del testo dalla risposta resa
+  robusta all'ordine dei blocchi restituiti.
+
 ## [0.5.0] - 2026-08-22
 
 ### Added

@@ -782,10 +782,11 @@ def test_claude_api():
 
     try:
         from anthropic import Anthropic
-        client = Anthropic()
+        client = Anthropic(api_key=settings.CLAUDE_API_KEY or settings.ANTHROPIC_API_KEY)
         client.messages.create(
-            model="claude-3-5-sonnet-20241022",
+            model="claude-sonnet-5",
             max_tokens=10,
+            thinking={"type": "disabled"},
             messages=[{"role": "user", "content": "ping"}],
         )
         return {"success": True, "message": "Connessione a Claude riuscita"}

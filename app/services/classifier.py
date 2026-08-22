@@ -25,7 +25,12 @@ class NewsClassifier:
     ]
 
     def __init__(self):
-        self.client = Anthropic() if (settings.CLAUDE_API_KEY or settings.ANTHROPIC_API_KEY) else None
+        # Anthropic() with no args only auto-reads the SDK's native
+        # ANTHROPIC_API_KEY env var - our own setup docs tell users to set
+        # CLAUDE_API_KEY, which the bare constructor never sees. Pass it
+        # explicitly so a CLAUDE_API_KEY-only .env actually authenticates.
+        api_key = settings.CLAUDE_API_KEY or settings.ANTHROPIC_API_KEY
+        self.client = Anthropic(api_key=api_key) if api_key else None
 
     def classify_news(
         self,
@@ -116,14 +121,15 @@ Regole:
 - Restituisci SOLO il JSON, niente altro"""
 
         message = self.client.messages.create(
-            model="claude-3-5-sonnet-20241022",
+            model="claude-sonnet-5",
             max_tokens=1024,
+            thinking={"type": "disabled"},
             messages=[
                 {"role": "user", "content": prompt}
             ]
         )
 
-        response_text = message.content[0].text.strip()
+        response_text = next((b.text for b in message.content if b.type == "text"), "").strip()
 
         # Parse JSON response
         try:
@@ -211,11 +217,12 @@ Regole:
 Restituisci il corpo della email in HTML."""
 
         message = self.client.messages.create(
-            model="claude-3-5-sonnet-20241022",
+            model="claude-sonnet-5",
             max_tokens=2048,
+            thinking={"type": "disabled"},
             messages=[
                 {"role": "user", "content": prompt}
             ]
         )
 
-        return message.content[0].text
+        return next((b.text for b in message.content if b.type == "text"), "")
