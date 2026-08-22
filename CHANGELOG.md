@@ -4,6 +4,46 @@ Tutte le modifiche rilevanti a questo progetto sono documentate in questo file.
 Il formato segue [Keep a Changelog](https://keepachangelog.com/) e il progetto
 usa [Semantic Versioning](https://semver.org/lang/it/).
 
+## [0.5.0] - 2026-08-22
+
+### Added
+- **Pagina "🔎 Copertura ricerca"** (`/coverage`): per ogni azienda mostra
+  quando è stata cercata l'ultima volta, se sono state trovate notizie e se
+  no perché (nessun risultato genuino, fonte bloccata/rate-limited, errore,
+  saltata perché ambigua, o mai cercata), con il dettaglio per-provider
+  (es. "google_news_rss:0, gdelt:blocked, rss:2"). Storico persistito nella
+  nuova tabella `search_logs`, un record per azienda per run.
+- **Gestione cluster manuale completa**, prima mancante quasi del tutto:
+  - Aggiungere/rimuovere aziende da un cluster (nel modale "Dettagli")
+  - Eliminare un cluster
+  - Vedere ed eliminare i destinatari email (prima la lista era hardcoded a
+    "nessun destinatario" anche quando ce n'erano già di salvati)
+- **"Approva"/"Rifiuta" nella pagina Notizie** ora aggiornano davvero lo
+  stato della notizia invece di mostrare un alert placeholder.
+- **"Modifica"/"Elimina" nella pagina Aziende** ora salvano/cancellano
+  davvero invece di mostrare un alert placeholder.
+- **"Test API" e "Test SMTP"** in Impostazioni ora eseguono un controllo
+  reale (una chiamata minima a Claude / un tentativo di connessione SMTP)
+  invece di mostrare un alert placeholder.
+
+### Fixed
+- **Bug di visibilità critico**: quando GDELT/Google News RSS fallivano
+  (rate limit, blocco, errore di rete) PRIMA che il circuit breaker
+  scattasse (il primo di due tentativi falliti), il fallimento veniva
+  etichettato silenziosamente come "0 risultati trovati" - indistinguibile
+  da "il provider ha davvero cercato e non ha trovato nulla". Ora ogni
+  provider espone l'esito reale dell'ultima chiamata, visibile nella nuova
+  pagina Copertura ricerca invece di sparire nei log del terminale.
+- Filtro stato azienda nella pagina Aziende (e la select di modifica)
+  usava valori in inglese (`Active`/`Paused`/`Archived`) che non hanno mai
+  corrisposto ai valori reali salvati in italiano (`Attiva`/`Pausa`) dal
+  resto del sistema (import, scheduler, filtri di Impostazioni) - il filtro
+  non poteva mai funzionare.
+- `EmailSender`/Test SMTP non avevano un timeout sulla connessione: con
+  host SMTP irraggiungibile o rete bloccata, la richiesta restava sospesa
+  a tempo indeterminato invece di fallire con un errore. Ora c'è un
+  timeout di 15s.
+
 ## [0.4.0] - 2026-08-22
 
 ### Added

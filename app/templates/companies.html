@@ -18,10 +18,10 @@
         <input type="text" id="search-input" placeholder="Cerca azienda per nome, email, sito web...">
         <select id="status-filter">
             <option value="">Tutti gli stati</option>
-            <option value="Active">Attiva</option>
-            <option value="Paused">In pausa</option>
+            <option value="Attiva">Attiva</option>
+            <option value="Pausa">In pausa</option>
             <option value="Needs Review">Da verificare</option>
-            <option value="Archived">Archiviata</option>
+            <option value="Archiviata">Archiviata</option>
         </select>
     </div>
 
@@ -78,10 +78,10 @@
             <div class="form-group">
                 <label>Stato</label>
                 <select id="company-status">
-                    <option>Active</option>
-                    <option>Paused</option>
+                    <option>Attiva</option>
+                    <option>Pausa</option>
                     <option>Needs Review</option>
-                    <option>Archived</option>
+                    <option>Archiviata</option>
                 </select>
             </div>
 
@@ -146,7 +146,7 @@
             <tr>
                 <td><strong>${c.company_name}</strong></td>
                 <td><span class="badge badge-primary">${c.relationship_type}</span></td>
-                <td><span class="badge ${c.status === 'Active' ? 'badge-success' : 'badge-warning'}">${c.status}</span></td>
+                <td><span class="badge ${c.status === 'Attiva' ? 'badge-success' : 'badge-warning'}">${c.status}</span></td>
                 <td>${c.company_email || '-'}</td>
                 <td>${c.website ? `<a href="${c.website}" target="_blank" style="color: #3498db;">🔗</a>` : '-'}</td>
                 <td>${c.account_owner || '-'}</td>
@@ -176,16 +176,47 @@
         document.getElementById('edit-modal').classList.remove('active');
     }
 
-    function saveCompany(event) {
+    async function saveCompany(event) {
         event.preventDefault();
-        alert('Funzionalità di edit sarà implementata nella Fase 2');
-        closeModal();
+
+        const id = document.getElementById('company-id').value;
+        const params = new URLSearchParams({
+            relationship_type: document.getElementById('company-type').value,
+            status: document.getElementById('company-status').value,
+            company_email: document.getElementById('company-email').value,
+            website: document.getElementById('company-website').value,
+            account_owner: document.getElementById('company-owner').value,
+        });
+
+        try {
+            const response = await fetch(`/api/companies/${id}?${params.toString()}`, { method: 'PUT' });
+            if (response.ok) {
+                closeModal();
+                loadCompanies();
+            } else {
+                const err = await response.json();
+                alert('Errore: ' + (err.detail || 'impossibile salvare le modifiche'));
+            }
+        } catch (error) {
+            alert('Errore: ' + error.message);
+        }
     }
 
-    function deleteCompany() {
-        if (confirm('Sei sicuro di voler eliminare questa azienda?')) {
-            alert('Funzionalità di delete sarà implementata nella Fase 2');
-            closeModal();
+    async function deleteCompany() {
+        const id = document.getElementById('company-id').value;
+        if (!confirm('Sei sicuro di voler eliminare questa azienda? Verranno eliminate anche le notizie e le associazioni a cluster collegate.')) return;
+
+        try {
+            const response = await fetch(`/api/companies/${id}`, { method: 'DELETE' });
+            if (response.ok) {
+                closeModal();
+                loadCompanies();
+            } else {
+                const err = await response.json();
+                alert('Errore: ' + (err.detail || 'impossibile eliminare'));
+            }
+        } catch (error) {
+            alert('Errore: ' + error.message);
         }
     }
 

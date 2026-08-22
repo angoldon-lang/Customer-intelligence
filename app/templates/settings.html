@@ -217,7 +217,17 @@
     }
 
     async function testAPI() {
-        alert('Test API sarà implementato nella Fase 2. Verificherà la connessione con Claude API.');
+        try {
+            const response = await fetch('/api/claude/test', { method: 'POST' });
+            const data = await response.json();
+            if (data.success) {
+                alert('✓ Connessione a Claude riuscita!');
+            } else {
+                alert('✗ Test fallito: ' + (data.error || 'errore sconosciuto'));
+            }
+        } catch (error) {
+            alert('Errore: ' + error.message);
+        }
     }
 
     async function loadProvidersStatus() {
@@ -301,7 +311,17 @@
     });
 
     async function testSMTP() {
-        alert('Test SMTP sarà implementato nella Fase 3. Invierà un email di test.');
+        try {
+            const response = await fetch('/api/email/test-smtp', { method: 'POST' });
+            const data = await response.json();
+            if (data.success) {
+                alert('✓ Connessione SMTP riuscita!');
+            } else {
+                alert('✗ Connessione SMTP fallita: ' + (data.error || 'errore sconosciuto'));
+            }
+        } catch (error) {
+            alert('Errore: ' + error.message);
+        }
     }
 
     let wasRunInProgress = false;

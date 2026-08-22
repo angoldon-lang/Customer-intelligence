@@ -12,7 +12,8 @@ import os
 from app import __version__
 from app.config import settings
 from app.database import init_db, get_db
-from app.models import Company, Cluster, NewsItem, Report, MonitoringRun, NewsSource, CompanyCluster, ClusterRecipient
+from sqlalchemy import func
+from app.models import Company, Cluster, NewsItem, Report, MonitoringRun, NewsSource, CompanyCluster, ClusterRecipient, SearchLog
 from app.services import DataImporter, DataNormalizer, ClusterManager
 from app.services.classifier import NewsClassifier
 from app.services.reporter import ReportGenerator
@@ -146,6 +147,100 @@ def list_companies(db: Session = Depends(get_db)):
     }
 
 
+@app.put("/api/companies/{company_id}")
+def update_company(
+    company_id: int,
+    company_name: str = None,
+    relationship_type: str = None,
+    status: str = None,
+    company_email: str = None,
+    ateco_description: str = None,
+    tax_code: str = None,
+    website: str = None,
+    account_owner: str = None,
+    db: Session = Depends(get_db)
+):
+    """Edit an existing company."""
+    company = db.query(Company).filter_by(id=company_id).first()
+    if not company:
+        raise HTTPException(status_code=404, detail="Company not found")
+
+    for field, value in [
+        ("company_name", company_name),
+        ("relationship_type", relationship_type),
+        ("status", status),
+        ("company_email", company_email),
+        ("ateco_description", ateco_description),
+        ("tax_code", tax_code),
+        ("website", website),
+        ("account_owner", account_owner),
+    ]:
+        if value is not None:
+            setattr(company, field, value)
+
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="A company with this name already exists")
+
+    return {"id": company.id, "company_name": company.company_name, "message": "Company updated successfully"}
+
+
+@app.delete("/api/companies/{company_id}")
+def delete_company(company_id: int, db: Session = Depends(get_db)):
+    """Delete a company (and its news items / cluster assignments)."""
+    company = db.query(Company).filter_by(id=company_id).first()
+    if not company:
+        raise HTTPException(status_code=404, detail="Company not found")
+    db.delete(company)
+    db.commit()
+    return {"message": "Company deleted"}
+
+
+@app.get("/api/coverage")
+def get_search_coverage(status: str = None, search: str = None, db: Session = Depends(get_db)):
+    """
+    Per-company search coverage: last time it was searched, on which
+    providers, whether anything was found, and if not why (no results vs
+    blocked vs skipped as ambiguous vs error vs never searched at all).
+    """
+    latest_ids = (
+        db.query(SearchLog.company_id, func.max(SearchLog.id).label("max_id"))
+        .group_by(SearchLog.company_id)
+        .subquery()
+    )
+    latest_logs = (
+        db.query(SearchLog)
+        .join(latest_ids, SearchLog.id == latest_ids.c.max_id)
+        .all()
+    )
+    logs_by_company = {log.company_id: log for log in latest_logs}
+
+    query = db.query(Company)
+    if search:
+        query = query.filter(Company.company_name.ilike(f"%{search}%"))
+    companies = query.order_by(Company.company_name).all()
+
+    coverage = []
+    for c in companies:
+        log = logs_by_company.get(c.id)
+        row_status = log.status if log else "never_searched"
+        if status and status != row_status:
+            continue
+        coverage.append({
+            "company_id": c.id,
+            "company_name": c.company_name,
+            "last_searched_at": log.searched_at.isoformat() if log else None,
+            "status": row_status,
+            "articles_found": log.articles_found if log else 0,
+            "providers_detail": log.providers_detail if log else None,
+            "error_message": log.error_message if log else None,
+        })
+
+    return {"total": len(coverage), "coverage": coverage}
+
+
 @app.get("/api/clusters")
 def list_clusters(db: Session = Depends(get_db)):
     """List all clusters."""
@@ -186,6 +281,116 @@ def create_cluster(
         "cluster_name": cluster.cluster_name,
         "message": "Cluster created successfully"
     }
+
+
+@app.put("/api/clusters/{cluster_id}")
+def update_cluster(
+    cluster_id: int,
+    cluster_name: str = None,
+    frequency: str = None,
+    min_relevance_score: int = None,
+    active: bool = None,
+    db: Session = Depends(get_db)
+):
+    """Edit an existing cluster's settings."""
+    cluster = db.query(Cluster).filter_by(id=cluster_id).first()
+    if not cluster:
+        raise HTTPException(status_code=404, detail="Cluster not found")
+
+    for field, value in [
+        ("cluster_name", cluster_name),
+        ("frequency", frequency),
+        ("min_relevance_score", min_relevance_score),
+        ("active", active),
+    ]:
+        if value is not None:
+            setattr(cluster, field, value)
+
+    db.commit()
+    return {"id": cluster.id, "cluster_name": cluster.cluster_name, "message": "Cluster updated successfully"}
+
+
+@app.delete("/api/clusters/{cluster_id}")
+def delete_cluster(cluster_id: int, db: Session = Depends(get_db)):
+    """Delete a cluster (and its recipients / company assignments / reports)."""
+    cluster = db.query(Cluster).filter_by(id=cluster_id).first()
+    if not cluster:
+        raise HTTPException(status_code=404, detail="Cluster not found")
+    db.delete(cluster)
+    db.commit()
+    return {"message": "Cluster deleted"}
+
+
+@app.get("/api/clusters/{cluster_id}/companies")
+def get_cluster_companies(cluster_id: int, db: Session = Depends(get_db)):
+    """List companies assigned to a cluster."""
+    cluster = db.query(Cluster).filter_by(id=cluster_id).first()
+    if not cluster:
+        raise HTTPException(status_code=404, detail="Cluster not found")
+
+    manager = ClusterManager()
+    companies = manager.get_companies_for_cluster(db, cluster_id)
+    return {
+        "total": len(companies),
+        "companies": [
+            {"id": c.id, "company_name": c.company_name, "relationship_type": c.relationship_type}
+            for c in companies
+        ]
+    }
+
+
+@app.post("/api/clusters/{cluster_id}/companies")
+def add_company_to_cluster(cluster_id: int, company_id: int, db: Session = Depends(get_db)):
+    """Manually assign a company to a cluster."""
+    cluster = db.query(Cluster).filter_by(id=cluster_id).first()
+    if not cluster:
+        raise HTTPException(status_code=404, detail="Cluster not found")
+    company = db.query(Company).filter_by(id=company_id).first()
+    if not company:
+        raise HTTPException(status_code=404, detail="Company not found")
+
+    manager = ClusterManager()
+    manager.assign_company_to_cluster(db, company_id, cluster_id, assignment_type="manual")
+    return {"message": f"{company.company_name} added to {cluster.cluster_name}"}
+
+
+@app.delete("/api/clusters/{cluster_id}/companies/{company_id}")
+def remove_company_from_cluster(cluster_id: int, company_id: int, db: Session = Depends(get_db)):
+    """Remove a company from a cluster."""
+    assignment = db.query(CompanyCluster).filter_by(cluster_id=cluster_id, company_id=company_id).first()
+    if not assignment:
+        raise HTTPException(status_code=404, detail="Company is not in this cluster")
+    db.delete(assignment)
+    db.commit()
+    return {"message": "Company removed from cluster"}
+
+
+@app.get("/api/clusters/{cluster_id}/recipients")
+def get_cluster_recipients(cluster_id: int, db: Session = Depends(get_db)):
+    """List email recipients for a cluster."""
+    cluster = db.query(Cluster).filter_by(id=cluster_id).first()
+    if not cluster:
+        raise HTTPException(status_code=404, detail="Cluster not found")
+
+    recipients = db.query(ClusterRecipient).filter_by(cluster_id=cluster_id).all()
+    return {
+        "total": len(recipients),
+        "recipients": [
+            {"id": r.id, "email": r.email, "name": r.name, "active": r.active}
+            for r in recipients
+        ]
+    }
+
+
+@app.delete("/api/clusters/{cluster_id}/recipients/{recipient_id}")
+def remove_cluster_recipient(cluster_id: int, recipient_id: int, db: Session = Depends(get_db)):
+    """Remove an email recipient from a cluster."""
+    recipient = db.query(ClusterRecipient).filter_by(id=recipient_id, cluster_id=cluster_id).first()
+    if not recipient:
+        raise HTTPException(status_code=404, detail="Recipient not found")
+    db.delete(recipient)
+    db.commit()
+    return {"message": "Recipient removed"}
 
 
 @app.post("/api/auto-clusters")
@@ -249,6 +454,22 @@ def list_news(
             for n in news
         ]
     }
+
+
+@app.post("/api/news/{news_id}/status")
+def update_news_status(news_id: int, status: str, db: Session = Depends(get_db)):
+    """Update a news item's status (Approved, Rejected, Needs Review, ...)."""
+    valid_statuses = ["New", "Approved", "Rejected", "Duplicate", "Needs Review", "Sent"]
+    if status not in valid_statuses:
+        raise HTTPException(status_code=400, detail=f"Invalid status, must be one of {valid_statuses}")
+
+    news = db.query(NewsItem).filter_by(id=news_id).first()
+    if not news:
+        raise HTTPException(status_code=404, detail="News item not found")
+
+    news.status = status
+    db.commit()
+    return {"id": news.id, "status": news.status, "message": "News status updated"}
 
 
 @app.get("/api/reports")
@@ -553,6 +774,25 @@ def test_smtp_connection():
     return result
 
 
+@app.post("/api/claude/test")
+def test_claude_api():
+    """Test the configured Claude API key with a minimal request."""
+    if not (settings.CLAUDE_API_KEY or settings.ANTHROPIC_API_KEY):
+        return {"success": False, "error": "Nessuna API key configurata (CLAUDE_API_KEY / ANTHROPIC_API_KEY)"}
+
+    try:
+        from anthropic import Anthropic
+        client = Anthropic()
+        client.messages.create(
+            model="claude-3-5-sonnet-20241022",
+            max_tokens=10,
+            messages=[{"role": "user", "content": "ping"}],
+        )
+        return {"success": True, "message": "Connessione a Claude riuscita"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 @app.post("/api/email/send-alert")
 def send_alert_email(
     news_id: int,
@@ -613,6 +853,12 @@ def upload_page(request: Request):
 def companies_page(request: Request):
     """Companies management page."""
     return render(request, "companies.html")
+
+
+@app.get("/coverage", response_class=HTMLResponse)
+def coverage_page(request: Request):
+    """Search coverage page - per-company search history/visibility."""
+    return render(request, "coverage.html")
 
 
 @app.get("/clusters", response_class=HTMLResponse)

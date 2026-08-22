@@ -29,6 +29,7 @@ class GDELTProvider(NewsSourceProvider):
         self.timeout = timeout or settings.NEWS_SEARCH_TIMEOUT
         self._last_request_at = 0.0
         self.rate_limited = False
+        self.last_call_error = None
 
     def _throttle(self):
         elapsed = time.monotonic() - self._last_request_at
@@ -49,7 +50,11 @@ class GDELTProvider(NewsSourceProvider):
     def search_company_news(
         self, company_name: str, keywords: List[str] = None
     ) -> List[NewsArticle]:
+        self.last_call_error = None
+
         if self.rate_limited:
+            print(f"[GDELT] Skipping '{company_name}': disabled earlier this run")
+            self.last_call_error = "disabled earlier this run"
             return []
 
         query = f'"{company_name}"'
@@ -70,11 +75,13 @@ class GDELTProvider(NewsSourceProvider):
             if response.status_code == 429:
                 print("[GDELT] Still rate limited after backoff, disabling GDELT for the rest of this run")
                 self.rate_limited = True
+                self.last_call_error = "HTTP 429"
                 return []
             response.raise_for_status()
             data = response.json()
         except (requests.RequestException, ValueError) as e:
             print(f"[GDELT] Error searching '{company_name}': {e}")
+            self.last_call_error = "request exception"
             return []
 
         articles = data.get("articles", []) if isinstance(data, dict) else []

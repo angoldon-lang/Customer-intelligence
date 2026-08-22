@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+
+{% block page_title %}Copertura ricerca{% endblock %}
+
+{% block content %}
+<div class="page-title">
+    <h2>Copertura ricerca notizie</h2>
+    <p>Per ogni azienda: quando è stata cercata l'ultima volta, con quali fonti, e cosa è stato trovato (o perché no)</p>
+</div>
+
+<div class="card">
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px;">
+        <div>
+            <label style="display: block; margin-bottom: 5px; font-size: 12px; color: #7f8c8d;">Cerca azienda</label>
+            <input type="text" id="search-input" placeholder="Nome azienda...">
+        </div>
+        <div>
+            <label style="display: block; margin-bottom: 5px; font-size: 12px; color: #7f8c8d;">Stato</label>
+            <select id="status-filter">
+                <option value="">Tutti</option>
+                <option value="found">✓ Notizie trovate</option>
+                <option value="no_results">⚠ Nessun risultato</option>
+                <option value="blocked">⛔ Fonte bloccata</option>
+                <option value="error">✗ Errore</option>
+                <option value="skipped_ambiguous">🔍 Da arricchire (P.IVA/sito)</option>
+                <option value="never_searched">— Mai cercata</option>
+            </select>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+        <h3>Aziende</h3>
+        <span id="coverage-count" style="font-size: 14px; color: #7f8c8d;">Caricamento...</span>
+    </div>
+
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Azienda</th>
+                <th>Ultima ricerca</th>
+                <th>Stato</th>
+                <th>Notizie trovate</th>
+                <th>Dettaglio fonti</th>
+            </tr>
+        </thead>
+        <tbody id="coverage-table">
+            <tr>
+                <td colspan="5" style="text-align: center; color: #7f8c8d;">Caricamento...</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <div id="empty-state" style="display: none; padding: 40px 20px; text-align: center; color: #7f8c8d;">
+        <p>Nessuna azienda corrisponde ai filtri.</p>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const STATUS_LABELS = {
+        'found': { label: '✓ Trovate', badge: 'badge-success' },
+        'no_results': { label: '⚠ Nessun risultato', badge: 'badge-warning' },
+        'blocked': { label: '⛔ Fonte bloccata', badge: 'badge-danger' },
+        'error': { label: '✗ Errore', badge: 'badge-danger' },
+        'skipped_ambiguous': { label: '🔍 Da arricchire (P.IVA/sito)', badge: 'badge-warning' },
+        'never_searched': { label: '— Mai cercata', badge: 'badge-primary' },
+    };
+
+    async function loadCoverage() {
+        const search = document.getElementById('search-input').value;
+        const status = document.getElementById('status-filter').value;
+
+        const params = new URLSearchParams();
+        if (search) params.set('search', search);
+        if (status) params.set('status', status);
+
+        try {
+            const response = await fetch(`/api/coverage?${params.toString()}`);
+            const data = await response.json();
+            renderTable(data.coverage || []);
+            document.getElementById('coverage-count').textContent = `${data.total} azienda/e`;
+        } catch (error) {
+            console.error('Error loading coverage:', error);
+        }
+    }
+
+    function renderTable(rows) {
+        const tbody = document.getElementById('coverage-table');
+        const emptyState = document.getElementById('empty-state');
+
+        if (rows.length === 0) {
+            tbody.innerHTML = '';
+            emptyState.style.display = 'block';
+            return;
+        }
+
+        emptyState.style.display = 'none';
+        tbody.innerHTML = rows.map(r => {
+            const info = STATUS_LABELS[r.status] || { label: r.status, badge: 'badge-primary' };
+            const lastSearched = r.last_searched_at ? new Date(r.last_searched_at).toLocaleString('it-IT') : '-';
+            const detail = r.providers_detail || r.error_message || '-';
+
+            return `
+                <tr>
+                    <td><strong>${r.company_name}</strong></td>
+                    <td>${lastSearched}</td>
+                    <td><span class="badge ${info.badge}">${info.label}</span></td>
+                    <td>${r.articles_found}</td>
+                    <td style="font-size: 12px; color: #7f8c8d;">${detail}</td>
+                </tr>
+            `;
+        }).join('');
+    }
+
+    document.getElementById('search-input').addEventListener('input', debounce(loadCoverage, 400));
+    document.getElementById('status-filter').addEventListener('change', loadCoverage);
+
+    function debounce(fn, delay) {
+        let timer;
+        return (...args) => {
+            clearTimeout(timer);
+            timer = setTimeout(() => fn(...args), delay);
+        };
+    }
+
+    loadCoverage();
+    setInterval(loadCoverage, 60000);
+</script>
+{% endblock %}

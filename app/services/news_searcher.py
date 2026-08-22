@@ -11,7 +11,7 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime
 from sqlalchemy.orm import Session
 from app.config import settings
-from app.models import Company, NewsItem
+from app.models import Company, NewsItem, SearchLog
 from app.services.classifier import NewsClassifier
 from app.providers.base import NewsSourceProvider
 from app.providers.google_news_rss import GoogleNewsRSSProvider
@@ -65,19 +65,58 @@ class NewsSearcher:
         """
         return not company.website and not company.tax_code
 
+    @staticmethod
+    def _provider_label(provider: NewsSourceProvider) -> str:
+        return provider.__class__.__name__.replace("Provider", "").lower()
+
+    # Substrings of last_call_error that indicate a rate-limit/circuit
+    # breaker condition rather than a genuine one-off failure.
+    _BLOCKED_REASONS = ("HTTP 429", "HTTP 403", "disabled earlier this run", "quota exceeded", "malformed RSS response")
+
+    @classmethod
+    def _classify_no_results(cls, provider_summary: List[str]) -> str:
+        """Explain why a search found nothing: blocked/rate-limited,
+        another kind of error, or genuinely no matching news."""
+        error_entries = [s for s in provider_summary if ":error(" in s]
+        if not error_entries:
+            return "no_results"
+        if any(reason in s for s in error_entries for reason in cls._BLOCKED_REASONS):
+            return "blocked"
+        return "error"
+
     def search_company_news(
         self, company: Company, providers: List[NewsSourceProvider]
-    ) -> List[Dict[str, Any]]:
-        """Search news for a specific company across all providers, deduped by URL."""
+    ) -> tuple:
+        """
+        Search news for a specific company across all providers, deduped by
+        URL. Returns (news_items, provider_summary) where provider_summary
+        is a list of "provider:N" / "provider:blocked" / "provider:error(reason)"
+        strings, recorded to SearchLog for per-company visibility.
+        """
         seen_urls = set()
         news_items = []
+        provider_summary = []
 
         for provider in providers:
+            label = self._provider_label(provider)
             try:
                 articles = provider.search_company_news(company.company_name)
             except Exception as e:
                 print(f"[NewsSearcher] {provider.__class__.__name__} failed for '{company.company_name}': {e}")
+                provider_summary.append(f"{label}:error(exception)")
                 continue
+
+            # last_call_error is set by providers with a circuit breaker
+            # (gdelt.py, gnews.py, google_news_rss.py) on THIS specific
+            # call, distinct from the run-level blocked/rate_limited/
+            # quota_exceeded flag - without it, a call that failed before
+            # the breaker actually trips (e.g. the first of two strikes)
+            # would be indistinguishable from a genuine "0 results found".
+            last_error = getattr(provider, "last_call_error", None)
+            if last_error:
+                provider_summary.append(f"{label}:error({last_error})")
+            else:
+                provider_summary.append(f"{label}:{len(articles)}")
 
             for article in articles:
                 url = (article.url or "").strip()
@@ -97,7 +136,7 @@ class NewsSearcher:
                     "company_name": company.company_name,
                 })
 
-        return news_items
+        return news_items, provider_summary
 
     def process_and_classify_news(
         self,
@@ -188,22 +227,46 @@ class NewsSearcher:
         for company in companies:
             if self.is_ambiguous(company):
                 result["companies_needing_enrichment"] += 1
+                db.add(SearchLog(
+                    company_id=company.id,
+                    status="skipped_ambiguous",
+                    articles_found=0,
+                    providers_detail="no website/tax code on file",
+                ))
                 continue
 
             try:
                 result["companies_checked"] += 1
 
-                news_items = self.search_company_news(company, providers)
+                news_items, provider_summary = self.search_company_news(company, providers)
+                providers_detail = ", ".join(provider_summary)
+
                 if news_items:
                     result["news_found"] += len(news_items)
                     saved = self.process_and_classify_news(db, company, news_items)
                     result["news_saved"] += len(saved)
+                    log_status = "found"
+                else:
+                    log_status = self._classify_no_results(provider_summary)
+
+                db.add(SearchLog(
+                    company_id=company.id,
+                    status=log_status,
+                    articles_found=len(news_items),
+                    providers_detail=providers_detail,
+                ))
 
                 company.last_monitored_at = datetime.utcnow()
                 db.add(company)
 
             except Exception as e:
                 result["errors"].append(f"{company.company_name}: {str(e)}")
+                db.add(SearchLog(
+                    company_id=company.id,
+                    status="error",
+                    articles_found=0,
+                    error_message=str(e),
+                ))
 
         db.commit()
         return result

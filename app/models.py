@@ -168,3 +168,22 @@ class MonitoringRun(Base):
     news_found = Column(Integer, default=0)
     reports_generated = Column(Integer, default=0)
     errors_count = Column(Integer, default=0)
+
+
+class SearchLog(Base):
+    """Per-company outcome of a single news search, for visibility into
+    coverage: which companies were actually searched, on which providers,
+    whether anything was found, and if not, why (no results vs blocked vs
+    skipped as ambiguous vs error)."""
+
+    __tablename__ = "search_logs"
+
+    id = Column(Integer, primary_key=True)
+    company_id = Column(Integer, ForeignKey("companies.id"), nullable=False)
+    searched_at = Column(DateTime, default=datetime.utcnow)
+    status = Column(String(50), nullable=False)  # found, no_results, skipped_ambiguous, error
+    articles_found = Column(Integer, default=0)
+    providers_detail = Column(Text)  # e.g. "google_news_rss:0, gdelt:blocked, gnews:disabled"
+    error_message = Column(Text)
+
+    company = relationship("Company")

@@ -141,7 +141,7 @@ http://localhost:8001
 
 ## Dashboard - Pagine disponibili
 
-La dashboard è completamente funzionante con **6 pagine principali**:
+La dashboard è completamente funzionante con **8 pagine principali**:
 
 ### 📊 Dashboard principale
 - Statistiche in tempo reale (aziende, cluster, notizie, report)
@@ -158,10 +158,16 @@ La dashboard è completamente funzionante con **6 pagine principali**:
 
 ### 🏢 Gestione aziende
 - Tabella completa con ricerca
-- Filtri per stato (Active, Paused, Needs Review, Archived)
+- Filtri per stato (Attiva, Pausa, Da verificare, Archiviata)
 - Visualizza sito web, email, account owner
-- Edit aziende (Fase 2)
-- Delete aziende (Fase 2)
+- Modifica ed elimina aziende (modale, con conferma per l'eliminazione)
+
+### 🔎 Copertura ricerca
+- Per ogni azienda: quando è stata cercata l'ultima volta, notizie trovate,
+  e se non ne ha trovate perché (nessun risultato, fonte bloccata, errore,
+  da arricchire con P.IVA/sito, o mai cercata)
+- Dettaglio per-provider (es. `google_news_rss:0, gdelt:blocked, rss:2`)
+- Filtri per stato e ricerca per nome azienda
 
 ### 📈 Configurazione cluster
 - **Crea cluster manualmente** con frequenza e filtri rilevanza
@@ -169,8 +175,9 @@ La dashboard è completamente funzionante con **6 pagine principali**:
   - Account Owner
   - Tipo azienda (Cliente, Fornitore, etc.)
   - Settore (Codice Ateco)
+- Aggiungi/rimuovi aziende dal cluster (modale "Dettagli")
 - Aggiungi/rimuovi destinatari email
-- Visualizza aziende associate
+- Elimina cluster
 
 ### 📰 Gestione notizie
 - Tabella notizie con filtri:
@@ -178,7 +185,7 @@ La dashboard è completamente funzionante con **6 pagine principali**:
   - **Categoria**: Investment, M&A, Cybersecurity, IT/Digital, etc.
   - **Rilevanza minima**: 1-10
 - Visualizza source, data, categoria
-- Approva/rifiuta notizie (Fase 2)
+- Approva/rifiuta notizie
 - Link diretto all'articolo
 
 ### 📧 Report email
@@ -186,7 +193,7 @@ La dashboard è completamente funzionante con **6 pagine principali**:
 - Scegli giorni da includere (1-90)
 - Anteprima report HTML
 - Status: Draft, Pending Approval, Sent
-- Invio email (Fase 3)
+- Invio email
 - Storico report completo
 
 ### ⚙️ Impostazioni

@@ -168,14 +168,28 @@
         }).join('');
     }
 
+    async function setNewsStatus(newsId, status) {
+        try {
+            const response = await fetch(`/api/news/${newsId}/status?status=${encodeURIComponent(status)}`, {
+                method: 'POST'
+            });
+            if (response.ok) {
+                loadNews();
+            } else {
+                const err = await response.json();
+                alert('Errore: ' + (err.detail || 'impossibile aggiornare la notizia'));
+            }
+        } catch (error) {
+            alert('Errore: ' + error.message);
+        }
+    }
+
     function approveNews(newsId) {
-        // Placeholder per Fase 2
-        alert('Funzionalità di approvazione sarà implementata nella Fase 2');
+        setNewsStatus(newsId, 'Approved');
     }
 
     function rejectNews(newsId) {
-        // Placeholder per Fase 2
-        alert('Funzionalità di rifiuto sarà implementata nella Fase 2');
+        setNewsStatus(newsId, 'Rejected');
     }
 
     // Event listeners for filters

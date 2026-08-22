@@ -29,6 +29,8 @@ class GoogleNewsRSSProvider(NewsSourceProvider):
         self.days = days
         self._last_request_at = 0.0
         self.blocked = False
+        self._consecutive_failures = 0
+        self.last_call_error = None
 
     def _throttle(self):
         elapsed = time.monotonic() - self._last_request_at
@@ -36,10 +38,26 @@ class GoogleNewsRSSProvider(NewsSourceProvider):
             time.sleep(MIN_REQUEST_INTERVAL - elapsed)
         self._last_request_at = time.monotonic()
 
+    def _record_failure(self, reason: str):
+        self._consecutive_failures += 1
+        if self._consecutive_failures >= 2:
+            print(f"[GoogleNewsRSS] {reason} twice in a row, disabling for the rest of this run")
+            self.blocked = True
+        else:
+            print(f"[GoogleNewsRSS] {reason} (attempt {self._consecutive_failures}/2 before disabling)")
+
     def search_company_news(
         self, company_name: str, keywords: List[str] = None
     ) -> List[NewsArticle]:
+        # Reset per-call: distinguishes "0 results, request genuinely
+        # succeeded" from "0 results because this specific call failed"
+        # (which the run-level `blocked` flag alone can't show before the
+        # circuit breaker actually trips after 2 failures).
+        self.last_call_error = None
+
         if self.blocked:
+            print(f"[GoogleNewsRSS] Skipping '{company_name}': disabled earlier this run")
+            self.last_call_error = "disabled earlier this run"
             return []
 
         query = f'"{company_name}" when:{self.days}d'
@@ -63,15 +81,29 @@ class GoogleNewsRSSProvider(NewsSourceProvider):
                 headers={"User-Agent": USER_AGENT},
             )
             if response.status_code in (403, 429):
-                print(f"[GoogleNewsRSS] Blocked ({response.status_code}), disabling for the rest of this run")
-                self.blocked = True
+                self._record_failure(f"HTTP {response.status_code}")
+                self.last_call_error = f"HTTP {response.status_code}"
                 return []
             response.raise_for_status()
         except requests.RequestException as e:
             print(f"[GoogleNewsRSS] Error searching '{company_name}': {e}")
+            self._record_failure("request exception")
+            self.last_call_error = "request exception"
             return []
 
         parsed = feedparser.parse(response.content)
+
+        if parsed.bozo and not parsed.entries:
+            # A 200 OK with a malformed/non-RSS body (e.g. a consent or
+            # CAPTCHA page) - feedparser silently returns 0 entries with no
+            # exception, so without this check a block looks identical to
+            # "genuinely no news found".
+            print(f"[GoogleNewsRSS] Response for '{company_name}' wasn't valid RSS ({parsed.get('bozo_exception')}), likely blocked")
+            self._record_failure("malformed RSS response")
+            self.last_call_error = "malformed RSS response"
+            return []
+
+        self._consecutive_failures = 0
         results = []
 
         for entry in parsed.entries:

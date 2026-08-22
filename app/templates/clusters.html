@@ -97,6 +97,30 @@
         </div>
 
         <div style="margin-bottom: 20px;">
+            <h4>Aziende nel cluster</h4>
+            <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                <input type="text" id="company-search" placeholder="Cerca azienda per nome..." style="flex: 1;" oninput="filterCompanyOptions()">
+                <select id="company-select" style="flex: 1;"></select>
+                <button type="button" class="btn btn-success btn-sm" onclick="addCompanyToCluster()">Aggiungi</button>
+            </div>
+        </div>
+
+        <table class="table" style="margin-bottom: 20px;">
+            <thead>
+                <tr>
+                    <th>Azienda</th>
+                    <th>Tipo</th>
+                    <th>Azioni</th>
+                </tr>
+            </thead>
+            <tbody id="cluster-companies-table">
+                <tr>
+                    <td colspan="3" style="text-align: center; color: #7f8c8d;">Nessuna azienda</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <div style="margin-bottom: 20px;">
             <h4>Aggiungi destinatario email</h4>
             <form onsubmit="addRecipient(event)">
                 <div style="display: flex; gap: 10px; margin-bottom: 10px;">
@@ -166,6 +190,7 @@
                 </td>
                 <td>
                     <button class="btn btn-sm btn-primary" onclick="openClusterModal(${c.id})">Dettagli</button>
+                    <button class="btn btn-sm btn-danger" onclick="deleteCluster(${c.id}, '${c.cluster_name.replace(/'/g, "\\'")}')">Elimina</button>
                 </td>
             </tr>
         `).join('');
@@ -216,13 +241,44 @@
         }
     }
 
-    function openClusterModal(clusterId) {
+    let allCompaniesForSelect = [];
+
+    async function deleteCluster(clusterId, clusterName) {
+        if (!confirm(`Eliminare il cluster "${clusterName}"? Verranno rimossi anche destinatari e associazioni aziende.`)) return;
+
+        try {
+            const response = await fetch(`/api/clusters/${clusterId}`, { method: 'DELETE' });
+            if (response.ok) {
+                loadClusters();
+            } else {
+                const err = await response.json();
+                alert('Errore: ' + (err.detail || 'impossibile eliminare il cluster'));
+            }
+        } catch (error) {
+            alert('Errore: ' + error.message);
+        }
+    }
+
+    async function openClusterModal(clusterId) {
         const cluster = allClusters.find(c => c.id === clusterId);
         if (!cluster) return;
 
         currentClusterId = clusterId;
         document.getElementById('modal-cluster-title').textContent = cluster.cluster_name;
         document.getElementById('cluster-modal').classList.add('active');
+
+        if (allCompaniesForSelect.length === 0) {
+            try {
+                const response = await fetch('/api/companies');
+                const data = await response.json();
+                allCompaniesForSelect = data.companies || [];
+            } catch (error) {
+                console.error('Error loading companies for select:', error);
+            }
+        }
+        populateCompanySelect(allCompaniesForSelect);
+
+        loadClusterCompanies(clusterId);
         loadRecipients(clusterId);
     }
 
@@ -231,13 +287,116 @@
         currentClusterId = null;
     }
 
+    function populateCompanySelect(companies) {
+        const select = document.getElementById('company-select');
+        select.innerHTML = companies.map(c => `<option value="${c.id}">${c.company_name}</option>`).join('');
+    }
+
+    function filterCompanyOptions() {
+        const query = document.getElementById('company-search').value.toLowerCase();
+        const filtered = allCompaniesForSelect.filter(c => c.company_name.toLowerCase().includes(query));
+        populateCompanySelect(filtered);
+    }
+
+    async function loadClusterCompanies(clusterId) {
+        try {
+            const response = await fetch(`/api/clusters/${clusterId}/companies`);
+            const data = await response.json();
+            const tbody = document.getElementById('cluster-companies-table');
+
+            if (!data.companies || data.companies.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="3" style="text-align: center; color: #7f8c8d;">Nessuna azienda</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = data.companies.map(c => `
+                <tr>
+                    <td>${c.company_name}</td>
+                    <td><span class="badge badge-primary">${c.relationship_type}</span></td>
+                    <td><button class="btn btn-sm btn-danger" onclick="removeCompanyFromCluster(${c.id})">Rimuovi</button></td>
+                </tr>
+            `).join('');
+        } catch (error) {
+            console.error('Error loading cluster companies:', error);
+        }
+    }
+
+    async function addCompanyToCluster() {
+        const companyId = document.getElementById('company-select').value;
+        if (!companyId || !currentClusterId) return;
+
+        try {
+            const response = await fetch(`/api/clusters/${currentClusterId}/companies?company_id=${companyId}`, {
+                method: 'POST'
+            });
+            if (response.ok) {
+                loadClusterCompanies(currentClusterId);
+                loadClusters();
+            } else {
+                const err = await response.json();
+                alert('Errore: ' + (err.detail || 'impossibile aggiungere'));
+            }
+        } catch (error) {
+            alert('Errore: ' + error.message);
+        }
+    }
+
+    async function removeCompanyFromCluster(companyId) {
+        if (!currentClusterId) return;
+        try {
+            const response = await fetch(`/api/clusters/${currentClusterId}/companies/${companyId}`, {
+                method: 'DELETE'
+            });
+            if (response.ok) {
+                loadClusterCompanies(currentClusterId);
+                loadClusters();
+            } else {
+                const err = await response.json();
+                alert('Errore: ' + (err.detail || 'impossibile rimuovere'));
+            }
+        } catch (error) {
+            alert('Errore: ' + error.message);
+        }
+    }
+
     async function loadRecipients(clusterId) {
-        // Placeholder - per ora mostra vuoto
-        document.getElementById('recipients-table').innerHTML = `
-            <tr>
-                <td colspan="3" style="text-align: center; color: #7f8c8d;">Nessun destinatario configurato</td>
-            </tr>
-        `;
+        try {
+            const response = await fetch(`/api/clusters/${clusterId}/recipients`);
+            const data = await response.json();
+            const tbody = document.getElementById('recipients-table');
+
+            if (!data.recipients || data.recipients.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="3" style="text-align: center; color: #7f8c8d;">Nessun destinatario configurato</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = data.recipients.map(r => `
+                <tr>
+                    <td>${r.email}</td>
+                    <td>${r.name || '-'}</td>
+                    <td><button class="btn btn-sm btn-danger" onclick="removeRecipient(${r.id})">Rimuovi</button></td>
+                </tr>
+            `).join('');
+        } catch (error) {
+            console.error('Error loading recipients:', error);
+        }
+    }
+
+    async function removeRecipient(recipientId) {
+        if (!currentClusterId) return;
+        try {
+            const response = await fetch(`/api/clusters/${currentClusterId}/recipients/${recipientId}`, {
+                method: 'DELETE'
+            });
+            if (response.ok) {
+                loadRecipients(currentClusterId);
+            } else {
+                const err = await response.json();
+                alert('Errore: ' + (err.detail || 'impossibile rimuovere'));
+            }
+        } catch (error) {
+            alert('Errore: ' + error.message);
+        }
     }
 
     async function addRecipient(event) {
@@ -252,10 +411,12 @@
             });
 
             if (response.ok) {
-                alert('✓ Destinatario aggiunto!');
                 document.getElementById('recipient-email').value = '';
                 document.getElementById('recipient-name').value = '';
                 loadRecipients(currentClusterId);
+            } else {
+                const err = await response.json();
+                alert('Errore: ' + (err.detail || 'impossibile aggiungere il destinatario'));
             }
         } catch (error) {
             alert('Errore: ' + error.message);

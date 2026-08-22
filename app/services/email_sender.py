@@ -47,7 +47,7 @@ class EmailSender:
             msg.attach(MIMEText(html_content, 'html'))
 
             # Send
-            with smtplib.SMTP(self.smtp_host, self.smtp_port) as server:
+            with smtplib.SMTP(self.smtp_host, self.smtp_port, timeout=15) as server:
                 server.starttls()
                 server.login(self.smtp_user, self.smtp_password)
                 server.send_message(msg)
@@ -108,7 +108,7 @@ Log in to the dashboard to view details and take action.
     def test_connection(self) -> Dict[str, Any]:
         """Test SMTP connection."""
         try:
-            with smtplib.SMTP(self.smtp_host, self.smtp_port) as server:
+            with smtplib.SMTP(self.smtp_host, self.smtp_port, timeout=15) as server:
                 server.starttls()
                 server.login(self.smtp_user, self.smtp_password)
             return {

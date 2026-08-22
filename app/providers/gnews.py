@@ -16,11 +16,15 @@ class GNewsProvider(NewsSourceProvider):
         self.api_key = api_key or settings.GNEWS_API_KEY
         self.timeout = timeout or settings.NEWS_SEARCH_TIMEOUT
         self.quota_exceeded = False
+        self.last_call_error = None
 
     def search_company_news(
         self, company_name: str, keywords: List[str] = None
     ) -> List[NewsArticle]:
+        self.last_call_error = None
+
         if not self.api_key or self.quota_exceeded:
+            self.last_call_error = "not configured" if not self.api_key else "quota exceeded earlier this run"
             return []
 
         query = f'"{company_name}"'
@@ -40,11 +44,13 @@ class GNewsProvider(NewsSourceProvider):
             if response.status_code in (401, 403, 429):
                 self.quota_exceeded = True
                 print(f"[GNews] Quota/auth error ({response.status_code}), disabling for this run")
+                self.last_call_error = f"HTTP {response.status_code}"
                 return []
             response.raise_for_status()
             data = response.json()
         except (requests.RequestException, ValueError) as e:
             print(f"[GNews] Error searching '{company_name}': {e}")
+            self.last_call_error = "request exception"
             return []
 
         articles = data.get("articles", []) if isinstance(data, dict) else []
