@@ -1,0 +1,226 @@
+{% extends "base.html" %}
+
+{% block page_title %}Impostazioni{% endblock %}
+
+{% block content %}
+<div class="page-title">
+    <h2>Configurazione sistema</h2>
+    <p>Configura API, email, scheduler e impostazioni generali</p>
+</div>
+
+<div style="display: grid; grid-template-columns: 1fr; gap: 20px; max-width: 600px;">
+
+    <div class="card">
+        <h3>🔑 API Claude</h3>
+        <div id="api-status" style="padding: 15px; background: #fff3cd; border-radius: 4px; margin-bottom: 15px;">
+            Verificando...
+        </div>
+        <form id="api-form">
+            <div class="form-group">
+                <label>API Key Claude</label>
+                <input type="password" id="api-key" placeholder="sk-ant-...">
+                <small style="color: #7f8c8d;">Sarà salvato in .env in modo sicuro</small>
+            </div>
+            <button type="button" class="btn btn-primary" onclick="testAPI()">🧪 Test API</button>
+            <button type="submit" class="btn btn-success">💾 Salva</button>
+        </form>
+    </div>
+
+    <div class="card">
+        <h3>📧 Configurazione Email (SMTP)</h3>
+        <form id="smtp-form">
+            <div class="form-group">
+                <label>Server SMTP</label>
+                <input type="text" placeholder="smtp.gmail.com" value="smtp.gmail.com">
+            </div>
+
+            <div class="form-group">
+                <label>Porta</label>
+                <input type="number" placeholder="587" value="587">
+            </div>
+
+            <div class="form-group">
+                <label>Email mittente</label>
+                <input type="email" placeholder="your-email@gmail.com">
+            </div>
+
+            <div class="form-group">
+                <label>Password app</label>
+                <input type="password" placeholder="password">
+                <small style="color: #7f8c8d;">Per Gmail: <a href="https://support.google.com/accounts/answer/185833" target="_blank">crea password app</a></small>
+            </div>
+
+            <button type="button" class="btn btn-primary" onclick="testSMTP()">🧪 Test SMTP</button>
+            <button type="submit" class="btn btn-success">💾 Salva</button>
+        </form>
+    </div>
+
+    <div class="card">
+        <h3>⏰ Scheduler monitoraggio</h3>
+        <form id="scheduler-form">
+            <div class="form-group">
+                <label>Abilita scheduler automatico</label>
+                <input type="checkbox" id="scheduler-enabled" checked>
+                <small style="display: block; color: #7f8c8d; margin-top: 5px;">Se abilitato, il sistema monitorerà automaticamente le aziende</small>
+            </div>
+
+            <div class="form-group">
+                <label>Intervallo monitoraggio (ore)</label>
+                <input type="number" id="check-interval" value="24" min="1" max="168">
+            </div>
+
+            <button type="submit" class="btn btn-success">💾 Salva</button>
+        </form>
+    </div>
+
+    <div class="card">
+        <h3>📊 Filtri di default</h3>
+        <form id="filters-form">
+            <div class="form-group">
+                <label>Tipo azienda da monitorare</label>
+                <select>
+                    <option selected>Cliente</option>
+                    <option>Fornitore</option>
+                    <option>Prospect</option>
+                    <option>Tutti</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>Stato azienda</label>
+                <select>
+                    <option selected>Attiva</option>
+                    <option>Tutte</option>
+                    <option>Pausa</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>Rilevanza minima notizie</label>
+                <select>
+                    <option value="1">Tutte (1+)</option>
+                    <option value="3">Bassa (3+)</option>
+                    <option value="5" selected>Media (5+)</option>
+                    <option value="7">Alta (7+)</option>
+                    <option value="9">Critica (9+)</option>
+                </select>
+            </div>
+
+            <button type="submit" class="btn btn-success">💾 Salva</button>
+        </form>
+    </div>
+
+    <div class="card">
+        <h3>🗑️ Manutenzione</h3>
+        <div style="display: flex; gap: 10px;">
+            <button type="button" class="btn btn-danger btn-sm" onclick="cleanupDatabase()">
+                🧹 Pulisci database
+            </button>
+            <button type="button" class="btn btn-danger btn-sm" onclick="resetSystem()">
+                🔄 Reset sistema
+            </button>
+        </div>
+    </div>
+
+    <div class="card">
+        <h3>📋 Info sistema</h3>
+        <table class="table" style="margin: 0;">
+            <tr>
+                <td><strong>Versione app:</strong></td>
+                <td>0.1.0 (MVP)</td>
+            </tr>
+            <tr>
+                <td><strong>Database:</strong></td>
+                <td>SQLite</td>
+            </tr>
+            <tr>
+                <td><strong>Backend:</strong></td>
+                <td>FastAPI</td>
+            </tr>
+            <tr>
+                <td><strong>AI Model:</strong></td>
+                <td>Claude (Anthropic)</td>
+            </tr>
+            <tr>
+                <td><strong>Fase roadmap:</strong></td>
+                <td>1 - MVP</td>
+            </tr>
+            <tr>
+                <td><strong>Ultima azione:</strong></td>
+                <td id="last-action">-</td>
+            </tr>
+        </table>
+    </div>
+
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Check API status on load
+    async function checkAPIStatus() {
+        try {
+            const response = await fetch('/api/health');
+            const data = await response.json();
+
+            const statusDiv = document.getElementById('api-status');
+            if (data.api) {
+                statusDiv.innerHTML = '✓ API Claude configurata e funzionante';
+                statusDiv.style.background = '#d4edda';
+                statusDiv.style.color = '#155724';
+            } else {
+                statusDiv.innerHTML = '⚠️ API Claude non configurata. Aggiungi la chiave per abilitare la classificazione AI.';
+                statusDiv.style.background = '#fff3cd';
+                statusDiv.style.color = '#856404';
+            }
+        } catch (error) {
+            console.error('Error checking API:', error);
+        }
+    }
+
+    async function testAPI() {
+        alert('Test API sarà implementato nella Fase 2. Verificherà la connessione con Claude API.');
+    }
+
+    async function testSMTP() {
+        alert('Test SMTP sarà implementato nella Fase 3. Invierà un email di test.');
+    }
+
+    function cleanupDatabase() {
+        if (confirm('Pulire il database rimuovendo notizie duplicate e vecchie?')) {
+            alert('Funzionalità di cleanup sarà implementata nella Fase 2');
+        }
+    }
+
+    function resetSystem() {
+        if (confirm('ATTENZIONE: Reset del sistema cancellerà TUTTI i dati. Sei sicuro?')) {
+            alert('Funzionalità di reset sarà implementata nella Fase 2');
+        }
+    }
+
+    // Form submissions
+    document.getElementById('api-form').addEventListener('submit', (e) => {
+        e.preventDefault();
+        alert('Salvataggio configurazione API sarà implementato nella Fase 2');
+    });
+
+    document.getElementById('smtp-form').addEventListener('submit', (e) => {
+        e.preventDefault();
+        alert('Salvataggio configurazione SMTP sarà implementato nella Fase 3');
+    });
+
+    document.getElementById('scheduler-form').addEventListener('submit', (e) => {
+        e.preventDefault();
+        alert('Salvataggio configurazione scheduler sarà implementato nella Fase 2');
+    });
+
+    document.getElementById('filters-form').addEventListener('submit', (e) => {
+        e.preventDefault();
+        alert('Salvataggio filtri sarà implementato nella Fase 2');
+    });
+
+    // Load status on page load
+    checkAPIStatus();
+</script>
+{% endblock %}

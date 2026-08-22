@@ -1,0 +1,191 @@
+{% extends "base.html" %}
+
+{% block page_title %}Gestione notizie{% endblock %}
+
+{% block content %}
+<div class="page-title">
+    <h2>Notizie trovate</h2>
+    <p>Visualizza, filtra e approva le notizie sulle aziende</p>
+</div>
+
+<div class="card">
+    <h3>Filtri</h3>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px;">
+        <div>
+            <label style="display: block; margin-bottom: 5px; font-size: 12px; color: #7f8c8d;">Stato</label>
+            <select id="status-filter">
+                <option value="">Tutti</option>
+                <option value="New">Nuove</option>
+                <option value="Approved">Approvate</option>
+                <option value="Rejected">Rifiutate</option>
+                <option value="Needs Review">Da verificare</option>
+            </select>
+        </div>
+        <div>
+            <label style="display: block; margin-bottom: 5px; font-size: 12px; color: #7f8c8d;">Categoria</label>
+            <select id="category-filter">
+                <option value="">Tutte</option>
+                <option value="Investment">Investment</option>
+                <option value="M&A">M&A</option>
+                <option value="Financial">Financial</option>
+                <option value="Cybersecurity">Cybersecurity</option>
+                <option value="Management">Management</option>
+                <option value="IT/Digital">IT/Digital</option>
+                <option value="Commercial Signal">Commercial Signal</option>
+                <option value="Risk Signal">Risk Signal</option>
+            </select>
+        </div>
+        <div>
+            <label style="display: block; margin-bottom: 5px; font-size: 12px; color: #7f8c8d;">Min. Rilevanza</label>
+            <select id="relevance-filter">
+                <option value="0">Tutte (0+)</option>
+                <option value="3">Bassa (3+)</option>
+                <option value="5">Media (5+)</option>
+                <option value="7">Alta (7+)</option>
+                <option value="9">Critica (9+)</option>
+            </select>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+        <h3>Notizie</h3>
+        <span id="news-count" style="font-size: 14px; color: #7f8c8d;">Caricamento...</span>
+    </div>
+
+    <div id="news-list"></div>
+
+    <div id="empty-state" style="display: none; padding: 40px 20px; text-align: center; color: #7f8c8d;">
+        <p>Nessuna notizia trovata. Avvia il monitoraggio per cercare notizie!</p>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let allNews = [];
+
+    async function loadNews() {
+        try {
+            const response = await fetch('/api/news?limit=100');
+            const data = await response.json();
+            allNews = data.news || [];
+            applyFilters();
+        } catch (error) {
+            console.error('Error loading news:', error);
+        }
+    }
+
+    function applyFilters() {
+        const status = document.getElementById('status-filter').value;
+        const category = document.getElementById('category-filter').value;
+        const relevance = parseInt(document.getElementById('relevance-filter').value) || 0;
+
+        const filtered = allNews.filter(n => {
+            const matchStatus = !status || n.status === status;
+            const matchCategory = !category || n.category === category;
+            const matchRelevance = n.relevance_score >= relevance;
+            return matchStatus && matchCategory && matchRelevance;
+        });
+
+        renderNews(filtered);
+        document.getElementById('news-count').textContent = `${filtered.length} notizia/e`;
+    }
+
+    function renderNews(news) {
+        const container = document.getElementById('news-list');
+        const emptyState = document.getElementById('empty-state');
+
+        if (news.length === 0) {
+            container.innerHTML = '';
+            emptyState.style.display = 'block';
+            return;
+        }
+
+        emptyState.style.display = 'none';
+
+        container.innerHTML = news.map(n => {
+            const relevanceColor = n.relevance_score >= 8 ? '#e74c3c' : n.relevance_score >= 6 ? '#f39c12' : '#27ae60';
+            const statusBadges = {
+                'New': 'badge-primary',
+                'Approved': 'badge-success',
+                'Rejected': 'badge-danger',
+                'Needs Review': 'badge-warning'
+            };
+
+            return `
+                <div style="
+                    border: 1px solid #ecf0f1;
+                    border-radius: 8px;
+                    padding: 20px;
+                    margin-bottom: 15px;
+                    background: white;
+                ">
+                    <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 15px;">
+                        <div style="flex: 1;">
+                            <h4 style="margin: 0 0 10px 0; color: #2c3e50;">${n.title}</h4>
+                            <p style="margin: 5px 0; color: #7f8c8d; font-size: 14px;">
+                                <strong>Azienda:</strong> ${n.company_name}
+                            </p>
+                            <p style="margin: 5px 0; color: #7f8c8d; font-size: 14px;">
+                                <strong>Fonte:</strong> <a href="${n.url}" target="_blank" style="color: #3498db;">${n.source_name}</a>
+                            </p>
+                        </div>
+                        <span class="badge ${statusBadges[n.status] || 'badge-primary'}" style="white-space: nowrap; margin-left: 10px;">
+                            ${n.status}
+                        </span>
+                    </div>
+
+                    <div style="display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap;">
+                        <span class="badge badge-primary">Categoria: ${n.category}</span>
+                        <span style="
+                            padding: 4px 8px;
+                            border-radius: 3px;
+                            font-size: 12px;
+                            font-weight: 600;
+                            background: rgba(52, 152, 219, 0.1);
+                            color: ${relevanceColor};
+                        ">
+                            Rilevanza: ${n.relevance_score.toFixed(1)}/10
+                        </span>
+                    </div>
+
+                    <div style="display: flex; gap: 10px; justify-content: flex-end;">
+                        <button class="btn btn-sm btn-success" onclick="approveNews(${n.id})">
+                            ✓ Approva
+                        </button>
+                        <button class="btn btn-sm btn-danger" onclick="rejectNews(${n.id})">
+                            ✗ Rifiuta
+                        </button>
+                        <a href="${n.url}" target="_blank" class="btn btn-sm btn-primary">
+                            → Leggi
+                        </a>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    function approveNews(newsId) {
+        // Placeholder per Fase 2
+        alert('Funzionalità di approvazione sarà implementata nella Fase 2');
+    }
+
+    function rejectNews(newsId) {
+        // Placeholder per Fase 2
+        alert('Funzionalità di rifiuto sarà implementata nella Fase 2');
+    }
+
+    // Event listeners for filters
+    document.getElementById('status-filter').addEventListener('change', applyFilters);
+    document.getElementById('category-filter').addEventListener('change', applyFilters);
+    document.getElementById('relevance-filter').addEventListener('change', applyFilters);
+
+    // Load on page load
+    loadNews();
+    // Refresh every 5 minutes
+    setInterval(loadNews, 300000);
+</script>
+{% endblock %}

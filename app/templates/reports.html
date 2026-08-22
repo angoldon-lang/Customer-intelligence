@@ -1,0 +1,264 @@
+{% extends "base.html" %}
+
+{% block page_title %}Gestione report{% endblock %}
+
+{% block content %}
+<div class="page-title">
+    <h2>Report email</h2>
+    <p>Genera e visualizza report per cluster</p>
+</div>
+
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 30px;">
+    <div class="card">
+        <h3>Genera nuovo report</h3>
+        <form id="generate-report-form" onsubmit="generateReport(event)">
+            <div class="form-group">
+                <label>Cluster</label>
+                <select id="cluster-select" required>
+                    <option value="">Seleziona cluster...</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>Giorni da includere</label>
+                <input type="number" id="days-back" value="7" min="1" max="90">
+            </div>
+
+            <button type="submit" class="btn btn-success" style="width: 100%;">Genera report</button>
+        </form>
+    </div>
+
+    <div class="card">
+        <h3>Info statistiche</h3>
+        <div style="padding: 10px 0;">
+            <p><strong>Report totali:</strong> <span id="total-reports">-</span></p>
+            <p><strong>In draft:</strong> <span id="draft-reports">-</span></p>
+            <p><strong>Inviati:</strong> <span id="sent-reports">-</span></p>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+        <h3>Report generati</h3>
+        <div>
+            <select id="status-filter" style="margin-left: 10px;">
+                <option value="">Tutti</option>
+                <option value="Draft">Draft</option>
+                <option value="Pending Approval">In approvazione</option>
+                <option value="Sent">Inviati</option>
+            </select>
+        </div>
+    </div>
+
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Cluster</th>
+                <th>Periodo</th>
+                <th>Stato</th>
+                <th>Data creazione</th>
+                <th>Azioni</th>
+            </tr>
+        </thead>
+        <tbody id="reports-table">
+            <tr>
+                <td colspan="5" style="text-align: center; color: #7f8c8d;">Caricamento...</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <div id="empty-state" style="display: none; padding: 40px 20px; text-align: center; color: #7f8c8d;">
+        <p>Nessun report ancora. <button class="btn btn-primary btn-sm" onclick="document.getElementById('generate-report-form').scrollIntoView()">Genera il primo!</button></p>
+    </div>
+</div>
+
+<!-- Modal Preview Report -->
+<div id="report-modal" class="modal">
+    <div class="modal-content" style="max-width: 700px; max-height: 80vh; overflow-y: auto;">
+        <div class="modal-header">
+            <h2>Anteprima report</h2>
+            <button class="modal-close" onclick="closeReportModal()">✕</button>
+        </div>
+
+        <div id="report-preview" style="margin-bottom: 20px; padding: 20px; background: #f9f9f9; border-radius: 4px;">
+            Caricamento...
+        </div>
+
+        <div style="display: flex; gap: 10px; justify-content: flex-end;">
+            <button class="btn btn-danger btn-sm" onclick="closeReportModal()">Chiudi</button>
+            <button class="btn btn-primary btn-sm" onclick="sendReport()">📧 Invia</button>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let allReports = [];
+    let allClusters = [];
+    let currentReportId = null;
+
+    async function loadClusters() {
+        try {
+            const response = await fetch('/api/clusters');
+            const data = await response.json();
+            allClusters = data.clusters || [];
+
+            const select = document.getElementById('cluster-select');
+            select.innerHTML = '<option value="">Seleziona cluster...</option>' + allClusters.map(c => `
+                <option value="${c.id}">${c.cluster_name}</option>
+            `).join('');
+        } catch (error) {
+            console.error('Error loading clusters:', error);
+        }
+    }
+
+    async function loadReports() {
+        try {
+            const response = await fetch('/api/reports?limit=50');
+            const data = await response.json();
+            allReports = data.reports || [];
+
+            // Update stats
+            document.getElementById('total-reports').textContent = allReports.length;
+            document.getElementById('draft-reports').textContent = allReports.filter(r => r.status === 'Draft').length;
+            document.getElementById('sent-reports').textContent = allReports.filter(r => r.status === 'Sent').length;
+
+            applyFilters();
+        } catch (error) {
+            console.error('Error loading reports:', error);
+        }
+    }
+
+    function applyFilters() {
+        const status = document.getElementById('status-filter').value;
+
+        const filtered = allReports.filter(r => {
+            const matchStatus = !status || r.status === status;
+            return matchStatus;
+        });
+
+        renderReportsTable(filtered);
+    }
+
+    function renderReportsTable(reports) {
+        const tbody = document.getElementById('reports-table');
+        const emptyState = document.getElementById('empty-state');
+
+        if (reports.length === 0) {
+            tbody.innerHTML = '';
+            emptyState.style.display = 'block';
+            return;
+        }
+
+        emptyState.style.display = 'none';
+        tbody.innerHTML = reports.map(r => {
+            const statusBadges = {
+                'Draft': 'badge-primary',
+                'Pending Approval': 'badge-warning',
+                'Sent': 'badge-success',
+                'Failed': 'badge-danger'
+            };
+
+            const startDate = new Date(r.period_start).toLocaleDateString('it-IT');
+            const endDate = new Date(r.period_end).toLocaleDateString('it-IT');
+            const createDate = new Date(r.created_at || r.period_end).toLocaleDateString('it-IT');
+
+            return `
+                <tr>
+                    <td><strong>${r.cluster_name}</strong></td>
+                    <td>${startDate} → ${endDate}</td>
+                    <td><span class="badge ${statusBadges[r.status] || 'badge-primary'}">${r.status}</span></td>
+                    <td>${createDate}</td>
+                    <td>
+                        <button class="btn btn-sm btn-primary" onclick="viewReport('${r.id}')">
+                            👁️ Anteprima
+                        </button>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+    }
+
+    async function generateReport(event) {
+        event.preventDefault();
+
+        const clusterId = document.getElementById('cluster-select').value;
+        const daysBack = document.getElementById('days-back').value;
+
+        if (!clusterId) {
+            alert('Seleziona un cluster');
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/reports/generate?cluster_id=${clusterId}&days_back=${daysBack}`, {
+                method: 'POST'
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                alert(`✓ Report generato per ${data.cluster_name}!`);
+                document.getElementById('generate-report-form').reset();
+                loadReports();
+            } else {
+                alert('Errore nella generazione del report');
+            }
+        } catch (error) {
+            alert('Errore: ' + error.message);
+        }
+    }
+
+    async function viewReport(reportId) {
+        const report = allReports.find(r => r.id === reportId);
+        if (!report) return;
+
+        currentReportId = reportId;
+
+        const preview = document.getElementById('report-preview');
+        preview.innerHTML = `
+            <div>
+                <h4>${report.cluster_name}</h4>
+                <p style="color: #7f8c8d; margin: 10px 0;">
+                    ${new Date(report.period_start).toLocaleDateString('it-IT')} →
+                    ${new Date(report.period_end).toLocaleDateString('it-IT')}
+                </p>
+                <p style="color: #7f8c8d; margin: 10px 0;">
+                    Status: <span class="badge badge-primary">${report.status}</span>
+                </p>
+                <hr style="margin: 15px 0;">
+                <p>
+                    <em>Report completo sarà visualizzato qui. Il contenuto HTML è disponibile nel database.</em>
+                </p>
+            </div>
+        `;
+
+        document.getElementById('report-modal').classList.add('active');
+    }
+
+    function closeReportModal() {
+        document.getElementById('report-modal').classList.remove('active');
+        currentReportId = null;
+    }
+
+    async function sendReport() {
+        if (!currentReportId) return;
+
+        if (!confirm('Inviare il report ai destinatari configurati?')) return;
+
+        alert('Funzionalità di invio sarà implementata nella Fase 3');
+        closeReportModal();
+    }
+
+    // Event listeners
+    document.getElementById('status-filter').addEventListener('change', applyFilters);
+
+    // Load on page load
+    loadClusters();
+    loadReports();
+    // Refresh every minute
+    setInterval(loadReports, 60000);
+</script>
+{% endblock %}

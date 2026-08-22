@@ -1,8 +1,9 @@
 """FastAPI application entry point."""
 
-from fastapi import FastAPI, UploadFile, File, Depends, HTTPException
+from fastapi import FastAPI, UploadFile, File, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 import os
@@ -24,111 +25,22 @@ app = FastAPI(
     version="0.1.0",
 )
 
+# Setup templates
+templates = Jinja2Templates(directory="app/templates")
+
 # Mount static files if they exist
 if os.path.exists("app/static"):
     app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 
 # ============================================================================
-# API Endpoints
+# Page Routes - HTML Templates
 # ============================================================================
 
 @app.get("/", response_class=HTMLResponse)
-def read_root():
+def read_root(request: Request):
     """Root endpoint - dashboard."""
-    return """
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Customer Intelligence Monitor</title>
-        <style>
-            * { margin: 0; padding: 0; box-sizing: border-box; }
-            body { font-family: Arial, sans-serif; background: #f5f5f5; }
-            .header { background: #2c3e50; color: white; padding: 30px; text-align: center; }
-            .header h1 { margin-bottom: 10px; }
-            .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
-            .menu { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 30px; }
-            .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); text-align: center; }
-            .card h2 { margin-bottom: 10px; color: #2c3e50; }
-            .card p { color: #666; margin-bottom: 15px; }
-            .btn { display: inline-block; padding: 10px 20px; background: #3498db; color: white; text-decoration: none; border-radius: 4px; border: none; cursor: pointer; }
-            .btn:hover { background: #2980b9; }
-            .status { margin-top: 30px; background: white; padding: 20px; border-radius: 8px; }
-            .status h2 { color: #2c3e50; margin-bottom: 15px; }
-            .status-item { padding: 10px; border-bottom: 1px solid #eee; }
-            .status-item:last-child { border-bottom: none; }
-        </style>
-    </head>
-    <body>
-        <div class="header">
-            <h1>Customer Intelligence Monitor</h1>
-            <p>Monitora notizie e informazioni su clienti, fornitori e aziende</p>
-        </div>
-
-        <div class="container">
-            <div class="menu">
-                <div class="card">
-                    <h2>📁 Importa Dati</h2>
-                    <p>Carica file Excel o CSV con anagrafica aziendali</p>
-                    <a href="/upload" class="btn">Accedi</a>
-                </div>
-
-                <div class="card">
-                    <h2>🏢 Aziende</h2>
-                    <p>Gestisci aziende da monitorare</p>
-                    <a href="/companies" class="btn">Gestisci</a>
-                </div>
-
-                <div class="card">
-                    <h2>📊 Cluster</h2>
-                    <p>Configura cluster e destinatari report</p>
-                    <a href="/clusters" class="btn">Configura</a>
-                </div>
-
-                <div class="card">
-                    <h2>📰 Notizie</h2>
-                    <p>Visualizza e approva notizie trovate</p>
-                    <a href="/news" class="btn">Visualizza</a>
-                </div>
-
-                <div class="card">
-                    <h2>📧 Report</h2>
-                    <p>Genera e gestisci report email</p>
-                    <a href="/reports" class="btn">Gestisci</a>
-                </div>
-
-                <div class="card">
-                    <h2>⚙️ Impostazioni</h2>
-                    <p>Configurazione generale sistema</p>
-                    <a href="/settings" class="btn">Configura</a>
-                </div>
-            </div>
-
-            <div class="status">
-                <h2>Stato Sistema</h2>
-                <div class="status-item">
-                    <strong>Database:</strong> <span id="db-status">Verificando...</span>
-                </div>
-                <div class="status-item">
-                    <strong>API Claude:</strong> <span id="api-status">Verificando...</span>
-                </div>
-                <div class="status-item">
-                    <strong>Provider Notizie:</strong> <span id="provider-status">Mock (MVP)</span>
-                </div>
-            </div>
-        </div>
-
-        <script>
-            fetch('/api/health')
-                .then(r => r.json())
-                .then(d => {
-                    document.getElementById('db-status').textContent = d.database ? '✓ OK' : '✗ Errore';
-                    document.getElementById('api-status').textContent = d.api ? '✓ OK' : '⚠️ Non configurata';
-                });
-        </script>
-    </body>
-    </html>
-    """
+    return templates.TemplateResponse("index.html", {"request": request})
 
 
 @app.get("/api/health")
@@ -231,6 +143,35 @@ def create_cluster(
     }
 
 
+@app.post("/api/auto-clusters")
+def auto_create_clusters(db: Session = Depends(get_db)):
+    """Auto-create clusters from company attributes."""
+    manager = ClusterManager()
+    companies = db.query(Company).all()
+    created = manager.create_auto_clusters(db, companies)
+    return {
+        "created": len(created),
+        "message": f"Created {len(created)} clusters"
+    }
+
+
+@app.post("/api/clusters/{cluster_id}/recipients")
+def add_cluster_recipient(
+    cluster_id: int,
+    email: str,
+    name: str = None,
+    db: Session = Depends(get_db)
+):
+    """Add recipient to cluster."""
+    manager = ClusterManager()
+    recipient = manager.add_recipient(db, cluster_id, email, name)
+    return {
+        "id": recipient.id,
+        "email": recipient.email,
+        "message": "Recipient added successfully"
+    }
+
+
 @app.get("/api/news")
 def list_news(
     status: str = None,
@@ -320,35 +261,40 @@ def generate_report(
     }
 
 
-# Placeholder endpoints for dashboard pages
 @app.get("/upload", response_class=HTMLResponse)
-def upload_page():
-    return "<h1>Upload Page (To be implemented)</h1>"
+def upload_page(request: Request):
+    """Upload page."""
+    return templates.TemplateResponse("upload.html", {"request": request})
 
 
 @app.get("/companies", response_class=HTMLResponse)
-def companies_page():
-    return "<h1>Companies Management (To be implemented)</h1>"
+def companies_page(request: Request):
+    """Companies management page."""
+    return templates.TemplateResponse("companies.html", {"request": request})
 
 
 @app.get("/clusters", response_class=HTMLResponse)
-def clusters_page():
-    return "<h1>Clusters Configuration (To be implemented)</h1>"
+def clusters_page(request: Request):
+    """Clusters configuration page."""
+    return templates.TemplateResponse("clusters.html", {"request": request})
 
 
 @app.get("/news", response_class=HTMLResponse)
-def news_page():
-    return "<h1>News Management (To be implemented)</h1>"
+def news_page(request: Request):
+    """News management page."""
+    return templates.TemplateResponse("news.html", {"request": request})
 
 
 @app.get("/reports", response_class=HTMLResponse)
-def reports_page():
-    return "<h1>Reports Management (To be implemented)</h1>"
+def reports_page(request: Request):
+    """Reports management page."""
+    return templates.TemplateResponse("reports.html", {"request": request})
 
 
 @app.get("/settings", response_class=HTMLResponse)
-def settings_page():
-    return "<h1>Settings (To be implemented)</h1>"
+def settings_page(request: Request):
+    """Settings page."""
+    return templates.TemplateResponse("settings.html", {"request": request})
 
 
 if __name__ == "__main__":

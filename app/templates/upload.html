@@ -1,0 +1,259 @@
+{% extends "base.html" %}
+
+{% block page_title %}Importa dati{% endblock %}
+
+{% block content %}
+<div class="page-title">
+    <h2>Importa anagrafica aziende</h2>
+    <p>Carica un file Excel o CSV con i dati delle aziende</p>
+</div>
+
+<div class="card">
+    <h3>Carica file</h3>
+
+    <div id="upload-area" style="
+        border: 2px dashed #3498db;
+        border-radius: 8px;
+        padding: 40px;
+        text-align: center;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        background: #f0f7ff;
+        margin: 20px 0;
+    ">
+        <input type="file" id="file-input" accept=".xlsx,.xls,.csv" style="display: none;">
+        <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#3498db" stroke-width="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="17 8 12 3 7 8"></polyline>
+            <line x1="12" y1="3" x2="12" y2="15"></line>
+        </svg>
+        <h4 style="margin: 15px 0; color: #2c3e50;">Trascina il file qui o clicca per selezionare</h4>
+        <p style="color: #7f8c8d; margin: 0;">Formati supportati: Excel (.xlsx, .xls) o CSV</p>
+    </div>
+
+    <div id="alerts-container"></div>
+
+    <h3 style="margin-top: 30px;">Formato file</h3>
+    <p>Il file deve contenere le seguenti colonne (Ragione Sociale è obbligatorio):</p>
+    <table class="table" style="margin-top: 15px;">
+        <thead>
+            <tr>
+                <th>Colonna</th>
+                <th>Descrizione</th>
+                <th>Obbligatorio</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><strong>Ragione Sociale</strong></td>
+                <td>Nome dell'azienda</td>
+                <td><span class="badge badge-danger">Sì</span></td>
+            </tr>
+            <tr>
+                <td>Tipo</td>
+                <td>Cliente, Fornitore, Prospect, etc.</td>
+                <td><span class="badge badge-primary">No</span></td>
+            </tr>
+            <tr>
+                <td>Stato</td>
+                <td>Attiva, Pausa, Sospesa, etc.</td>
+                <td><span class="badge badge-primary">No</span></td>
+            </tr>
+            <tr>
+                <td>Codice Cliente</td>
+                <td>ID interno cliente</td>
+                <td><span class="badge badge-primary">No</span></td>
+            </tr>
+            <tr>
+                <td>E-Mail</td>
+                <td>Email aziendale</td>
+                <td><span class="badge badge-primary">No</span></td>
+            </tr>
+            <tr>
+                <td>Codice Ateco</td>
+                <td>Descrizione settore</td>
+                <td><span class="badge badge-primary">No</span></td>
+            </tr>
+            <tr>
+                <td>Codice Fiscale</td>
+                <td>P.IVA o CF</td>
+                <td><span class="badge badge-primary">No</span></td>
+            </tr>
+            <tr>
+                <td>Sito Web</td>
+                <td>URL sito ufficiale</td>
+                <td><span class="badge badge-primary">No</span></td>
+            </tr>
+            <tr>
+                <td>Referente Commerciale</td>
+                <td>Account owner</td>
+                <td><span class="badge badge-primary">No</span></td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+
+<div id="results-container" style="display: none; margin-top: 30px;">
+    <div class="card">
+        <h3>Risultati import</h3>
+        <div class="stats">
+            <div class="stat-card">
+                <h3>Righe totali</h3>
+                <div class="number" id="result-total">-</div>
+            </div>
+            <div class="stat-card">
+                <h3>Elaborate</h3>
+                <div class="number" id="result-processed">-</div>
+            </div>
+            <div class="stat-card">
+                <h3>Aggiunte DB</h3>
+                <div class="number" id="result-added">-</div>
+            </div>
+            <div class="stat-card">
+                <h3>Errori</h3>
+                <div class="number" id="result-errors">-</div>
+            </div>
+        </div>
+
+        <div id="validation-results" style="margin-top: 20px;"></div>
+
+        <a href="/companies" class="btn btn-primary" style="margin-top: 20px;">Vai alle aziende</a>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const uploadArea = document.getElementById('upload-area');
+    const fileInput = document.getElementById('file-input');
+    const alertsContainer = document.getElementById('alerts-container');
+    const resultsContainer = document.getElementById('results-container');
+
+    // Handle drag and drop
+    uploadArea.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        uploadArea.style.background = '#e3f2fd';
+        uploadArea.style.borderColor = '#2196f3';
+    });
+
+    uploadArea.addEventListener('dragleave', () => {
+        uploadArea.style.background = '#f0f7ff';
+        uploadArea.style.borderColor = '#3498db';
+    });
+
+    uploadArea.addEventListener('drop', (e) => {
+        e.preventDefault();
+        uploadArea.style.background = '#f0f7ff';
+        uploadArea.style.borderColor = '#3498db';
+
+        const files = e.dataTransfer.files;
+        if (files.length > 0) {
+            handleFile(files[0]);
+        }
+    });
+
+    // Handle click
+    uploadArea.addEventListener('click', () => {
+        fileInput.click();
+    });
+
+    fileInput.addEventListener('change', (e) => {
+        if (e.target.files.length > 0) {
+            handleFile(e.target.files[0]);
+        }
+    });
+
+    async function handleFile(file) {
+        alertsContainer.innerHTML = '';
+
+        // Validate file type
+        const validTypes = ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/vnd.ms-excel', 'text/csv'];
+        if (!validTypes.includes(file.type) && !file.name.endsWith('.csv')) {
+            showAlert('error', 'Formato file non supportato. Usa Excel (.xlsx, .xls) o CSV.');
+            return;
+        }
+
+        // Upload file
+        const formData = new FormData();
+        formData.append('file', file);
+
+        try {
+            showAlert('info', 'Caricamento in corso...');
+            const response = await fetch('/api/import', {
+                method: 'POST',
+                body: formData
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.detail || 'Errore nell\'importazione');
+            }
+
+            const result = await response.json();
+            displayResults(result);
+        } catch (error) {
+            showAlert('error', 'Errore: ' + error.message);
+        }
+    }
+
+    function displayResults(result) {
+        resultsContainer.style.display = 'block';
+        document.getElementById('result-total').textContent = result.total_rows || 0;
+        document.getElementById('result-processed').textContent = result.processed_rows || 0;
+        document.getElementById('result-added').textContent = result.added_to_database || 0;
+        document.getElementById('result-errors').textContent = result.skipped_rows || 0;
+
+        let validationHtml = '';
+
+        if (result.validation_errors && result.validation_errors.length > 0) {
+            validationHtml += '<div class="alert alert-danger"><strong>Errori:</strong><ul>';
+            result.validation_errors.slice(0, 5).forEach(e => {
+                validationHtml += `<li>${e}</li>`;
+            });
+            if (result.validation_errors.length > 5) {
+                validationHtml += `<li>... e ${result.validation_errors.length - 5} altri errori</li>`;
+            }
+            validationHtml += '</ul></div>';
+        }
+
+        if (result.validation_warnings && result.validation_warnings.length > 0) {
+            validationHtml += '<div class="alert alert-warning"><strong>Avvertimenti:</strong><ul>';
+            result.validation_warnings.forEach(w => {
+                validationHtml += `<li>${w}</li>`;
+            });
+            validationHtml += '</ul></div>';
+        }
+
+        if (result.processed_rows > 0 && result.added_to_database === 0) {
+            validationHtml += '<div class="alert alert-warning">Nessuna azienda aggiunta (probabilmente già presenti nel database).</div>';
+        }
+
+        if (result.added_to_database > 0) {
+            validationHtml += `<div class="alert alert-success">✓ ${result.added_to_database} azienda/e aggiunta/e con successo!</div>`;
+        }
+
+        document.getElementById('validation-results').innerHTML = validationHtml;
+
+        // Clear the upload area and reset
+        uploadArea.style.background = '#f0f7ff';
+        fileInput.value = '';
+    }
+
+    function showAlert(type, message) {
+        const alertClasses = {
+            'error': 'alert-danger',
+            'warning': 'alert-warning',
+            'success': 'alert-success',
+            'info': 'alert-warning'
+        };
+
+        const alert = document.createElement('div');
+        alert.className = `alert ${alertClasses[type] || 'alert-warning'}`;
+        alert.textContent = message;
+
+        alertsContainer.innerHTML = '';
+        alertsContainer.appendChild(alert);
+    }
+</script>
+{% endblock %}

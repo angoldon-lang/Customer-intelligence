@@ -1,0 +1,268 @@
+{% extends "base.html" %}
+
+{% block page_title %}Gestione cluster{% endblock %}
+
+{% block content %}
+<div class="page-title">
+    <h2>Cluster e destinatari report</h2>
+    <p>Configura cluster di aziende e destinatari email</p>
+</div>
+
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 30px;">
+    <div class="card">
+        <h3>Crea nuovo cluster</h3>
+        <form id="create-cluster-form" onsubmit="createCluster(event)">
+            <div class="form-group">
+                <label>Nome cluster</label>
+                <input type="text" id="cluster-name" required placeholder="es. Clienti Strategici">
+            </div>
+
+            <div class="form-group">
+                <label>Tipo</label>
+                <select id="cluster-type">
+                    <option value="manual">Manuale</option>
+                    <option value="by_account_owner">Per Account Owner</option>
+                    <option value="by_type">Per Tipo</option>
+                    <option value="by_sector">Per Settore</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>Frequenza report</label>
+                <select id="cluster-frequency">
+                    <option>daily</option>
+                    <option>weekly</option>
+                    <option>monthly</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>Min. rilevanza notizie</label>
+                <select id="cluster-relevance">
+                    <option value="1">Qualsiasi (1+)</option>
+                    <option value="3">Bassa (3+)</option>
+                    <option value="5" selected>Media (5+)</option>
+                    <option value="7">Alta (7+)</option>
+                    <option value="9">Critica (9+)</option>
+                </select>
+            </div>
+
+            <button type="submit" class="btn btn-success" style="width: 100%;">Crea cluster</button>
+        </form>
+    </div>
+
+    <div class="card">
+        <h3>Genera cluster automatici</h3>
+        <p style="color: #7f8c8d; margin-bottom: 15px;">Crea cluster automaticamente da:</p>
+        <button class="btn btn-primary" style="width: 100%; margin-bottom: 10px;" onclick="autoCreateClusters()">
+            🤖 Crea automaticamente
+        </button>
+        <p style="font-size: 12px; color: #7f8c8d;">Crea cluster per Account Owner e Tipo azienda</p>
+    </div>
+</div>
+
+<div class="card">
+    <h3>Cluster configurati</h3>
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Nome</th>
+                <th>Tipo</th>
+                <th>Frequenza</th>
+                <th>Aziende</th>
+                <th>Destinatari</th>
+                <th>Azioni</th>
+            </tr>
+        </thead>
+        <tbody id="clusters-table">
+            <tr>
+                <td colspan="6" style="text-align: center; color: #7f8c8d;">Caricamento...</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <div id="empty-clusters" style="display: none; padding: 40px 20px; text-align: center; color: #7f8c8d;">
+        <p>Nessun cluster ancora. Crea il primo!</p>
+    </div>
+</div>
+
+<!-- Modal Cluster Detail -->
+<div id="cluster-modal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2 id="modal-cluster-title">Dettagli cluster</h2>
+            <button class="modal-close" onclick="closeClusterModal()">✕</button>
+        </div>
+
+        <div style="margin-bottom: 20px;">
+            <h4>Aggiungi destinatario email</h4>
+            <form onsubmit="addRecipient(event)">
+                <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                    <input type="email" id="recipient-email" required placeholder="email@example.com" style="flex: 1;">
+                    <input type="text" id="recipient-name" placeholder="Nome (opzionale)">
+                    <button type="submit" class="btn btn-success btn-sm">Aggiungi</button>
+                </div>
+            </form>
+        </div>
+
+        <table class="table" style="margin-bottom: 20px;">
+            <thead>
+                <tr>
+                    <th>Email</th>
+                    <th>Nome</th>
+                    <th>Azioni</th>
+                </tr>
+            </thead>
+            <tbody id="recipients-table">
+                <tr>
+                    <td colspan="3" style="text-align: center; color: #7f8c8d;">Nessun destinatario</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <button type="button" class="btn btn-danger btn-sm" onclick="closeClusterModal()">Chiudi</button>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let allClusters = [];
+    let currentClusterId = null;
+
+    async function loadClusters() {
+        try {
+            const response = await fetch('/api/clusters');
+            const data = await response.json();
+            allClusters = data.clusters || [];
+            renderClustersTable(allClusters);
+        } catch (error) {
+            console.error('Error loading clusters:', error);
+        }
+    }
+
+    function renderClustersTable(clusters) {
+        const tbody = document.getElementById('clusters-table');
+        const emptyState = document.getElementById('empty-clusters');
+
+        if (clusters.length === 0) {
+            tbody.innerHTML = '';
+            emptyState.style.display = 'block';
+            return;
+        }
+
+        emptyState.style.display = 'none';
+        tbody.innerHTML = clusters.map(c => `
+            <tr>
+                <td><strong>${c.cluster_name}</strong></td>
+                <td><span class="badge badge-primary">${c.cluster_type}</span></td>
+                <td>${c.frequency}</td>
+                <td>${c.company_count}</td>
+                <td>
+                    <span class="badge badge-success">Configurato</span>
+                </td>
+                <td>
+                    <button class="btn btn-sm btn-primary" onclick="openClusterModal(${c.id})">Dettagli</button>
+                </td>
+            </tr>
+        `).join('');
+    }
+
+    async function createCluster(event) {
+        event.preventDefault();
+
+        const name = document.getElementById('cluster-name').value;
+        const type = document.getElementById('cluster-type').value;
+        const frequency = document.getElementById('cluster-frequency').value;
+
+        try {
+            const response = await fetch(`/api/clusters?cluster_name=${encodeURIComponent(name)}&cluster_type=${type}&frequency=${frequency}`, {
+                method: 'POST'
+            });
+
+            if (response.ok) {
+                alert(`✓ Cluster "${name}" creato con successo!`);
+                document.getElementById('create-cluster-form').reset();
+                loadClusters();
+            } else {
+                alert('Errore nella creazione del cluster');
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            alert('Errore: ' + error.message);
+        }
+    }
+
+    async function autoCreateClusters() {
+        if (!confirm('Crea cluster automaticamente da Account Owner e Tipo azienda?')) return;
+
+        try {
+            const response = await fetch('/api/auto-clusters', {
+                method: 'POST'
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                alert(`✓ ${data.created} cluster creati automaticamente!`);
+                loadClusters();
+            } else {
+                alert('Errore nella creazione automatica');
+            }
+        } catch (error) {
+            alert('Errore: ' + error.message);
+        }
+    }
+
+    function openClusterModal(clusterId) {
+        const cluster = allClusters.find(c => c.id === clusterId);
+        if (!cluster) return;
+
+        currentClusterId = clusterId;
+        document.getElementById('modal-cluster-title').textContent = cluster.cluster_name;
+        document.getElementById('cluster-modal').classList.add('active');
+        loadRecipients(clusterId);
+    }
+
+    function closeClusterModal() {
+        document.getElementById('cluster-modal').classList.remove('active');
+        currentClusterId = null;
+    }
+
+    async function loadRecipients(clusterId) {
+        // Placeholder - per ora mostra vuoto
+        document.getElementById('recipients-table').innerHTML = `
+            <tr>
+                <td colspan="3" style="text-align: center; color: #7f8c8d;">Nessun destinatario configurato</td>
+            </tr>
+        `;
+    }
+
+    async function addRecipient(event) {
+        event.preventDefault();
+
+        const email = document.getElementById('recipient-email').value;
+        const name = document.getElementById('recipient-name').value;
+
+        try {
+            const response = await fetch(`/api/clusters/${currentClusterId}/recipients?email=${encodeURIComponent(email)}&name=${encodeURIComponent(name || '')}`, {
+                method: 'POST'
+            });
+
+            if (response.ok) {
+                alert('✓ Destinatario aggiunto!');
+                document.getElementById('recipient-email').value = '';
+                document.getElementById('recipient-name').value = '';
+                loadRecipients(currentClusterId);
+            }
+        } catch (error) {
+            alert('Errore: ' + error.message);
+        }
+    }
+
+    // Load on page load
+    loadClusters();
+    // Refresh every minute
+    setInterval(loadClusters, 60000);
+</script>
+{% endblock %}
