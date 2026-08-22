@@ -5,6 +5,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 from datetime import datetime, timedelta
 import os
 
@@ -64,20 +65,34 @@ async def import_data(file: UploadFile = File(...), db: Session = Depends(get_db
 
         # Save companies to database
         added_count = 0
+        duplicate_count = 0
+        error_companies = []
+
         for company_data in result["companies"]:
-            # Check if already exists
-            existing = db.query(Company).filter_by(company_name=company_data["company_name"]).first()
-            if not existing:
-                company = Company(**company_data)
-                db.add(company)
-                added_count += 1
+            try:
+                existing = db.query(Company).filter_by(company_name=company_data["company_name"]).first()
+                if not existing:
+                    company = Company(**company_data)
+                    db.add(company)
+                    db.flush()
+                    added_count += 1
+                else:
+                    duplicate_count += 1
+            except IntegrityError:
+                db.rollback()
+                duplicate_count += 1
+                error_companies.append(company_data["company_name"])
 
         db.commit()
 
         result["added_to_database"] = added_count
+        result["duplicate_companies"] = duplicate_count
+        if error_companies:
+            result["skipped_duplicates"] = error_companies
         return result
 
     except Exception as e:
+        db.rollback()
         raise HTTPException(status_code=400, detail=str(e))
 
 
