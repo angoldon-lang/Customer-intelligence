@@ -25,7 +25,14 @@ class NewsSearcher:
     """Search for news across providers, dedupe, and classify by relevance."""
 
     def __init__(self):
-        self.classifier = NewsClassifier()
+        # CLASSIFIER_MODE lets you avoid API credits entirely:
+        # "heuristic" classifies by keywords offline, "off" skips scoring.
+        if settings.CLASSIFIER_MODE == "heuristic":
+            from app.services.heuristic_classifier import HeuristicClassifier
+            self.classifier = HeuristicClassifier()
+            print("[NewsSearcher] Classificazione: euristica (gratuita, nessuna API)")
+        else:
+            self.classifier = NewsClassifier()
 
     def _build_providers(self, db: Session) -> List[NewsSourceProvider]:
         """Build the provider list for one monitoring run."""

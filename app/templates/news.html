@@ -8,6 +8,8 @@
     <p>Visualizza, filtra e approva le notizie sulle aziende</p>
 </div>
 
+<div id="company-filter-banner" style="display:none; padding:12px; background:#cfe2ff; color:#004085; border-radius:4px; margin-bottom:15px;"></div>
+
 <div class="card">
     <h3>Filtri</h3>
     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px;">
@@ -67,11 +69,23 @@
 <script>
     let allNews = [];
 
+    // Set when arriving from Copertura ricerca via "N notizie →"
+    const companyFilter = new URLSearchParams(window.location.search).get('company_id');
+
     async function loadNews() {
         try {
-            const response = await fetch('/api/news?limit=100');
+            let url = '/api/news?limit=200';
+            if (companyFilter) url += `&company_id=${encodeURIComponent(companyFilter)}`;
+            const response = await fetch(url);
             const data = await response.json();
             allNews = data.news || [];
+
+            const banner = document.getElementById('company-filter-banner');
+            if (companyFilter && allNews.length) {
+                banner.innerHTML = `Filtrato per azienda: <strong>${allNews[0].company_name}</strong> — <a href="/news">mostra tutte le notizie</a>`;
+                banner.style.display = 'block';
+            }
+
             applyFilters();
         } catch (error) {
             console.error('Error loading news:', error);

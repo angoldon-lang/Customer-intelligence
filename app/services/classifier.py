@@ -56,6 +56,23 @@ class NewsClassifier:
             return "API key senza permessi"
         return None
 
+    # Models that accept an explicit thinking config. Older models (e.g.
+    # claude-haiku-4-5) don't take `thinking: disabled` and would 400 on it,
+    # and they don't think by default anyway - so we just omit the param.
+    _THINKING_CAPABLE_PREFIXES = (
+        "claude-opus-5", "claude-opus-4-8", "claude-opus-4-7", "claude-opus-4-6",
+        "claude-sonnet-5", "claude-sonnet-4-6", "claude-fable-5",
+    )
+
+    @classmethod
+    def _thinking_kwargs(cls) -> Dict[str, Any]:
+        """Turn thinking off where supported: classification is a short,
+        structured task that gains nothing from it and only costs more."""
+        model = settings.CLAUDE_MODEL
+        if any(model.startswith(p) for p in cls._THINKING_CAPABLE_PREFIXES):
+            return {"thinking": {"type": "disabled"}}
+        return {}
+
     @staticmethod
     def sdk_supports_messages() -> bool:
         """True if the installed anthropic SDK has the Messages API."""
@@ -176,9 +193,9 @@ Regole:
 
         try:
             message = self.client.messages.create(
-                model="claude-sonnet-5",
+                model=settings.CLAUDE_MODEL,
                 max_tokens=1024,
-                thinking={"type": "disabled"},
+                **self._thinking_kwargs(),
                 messages=[
                     {"role": "user", "content": prompt}
                 ]
@@ -278,9 +295,9 @@ Regole:
 Restituisci il corpo della email in HTML."""
 
         message = self.client.messages.create(
-            model="claude-sonnet-5",
+            model=settings.CLAUDE_MODEL,
             max_tokens=2048,
-            thinking={"type": "disabled"},
+            **self._thinking_kwargs(),
             messages=[
                 {"role": "user", "content": prompt}
             ]

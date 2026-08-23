@@ -32,7 +32,10 @@
 <div class="card">
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
         <h3>Aziende</h3>
-        <span id="coverage-count" style="font-size: 14px; color: #7f8c8d;">Caricamento...</span>
+        <div>
+            <span id="coverage-count" style="font-size: 14px; color: #7f8c8d; margin-right: 10px;">Caricamento...</span>
+            <button type="button" class="btn btn-sm btn-danger" onclick="clearLogs()">🧹 Pulisci errori</button>
+        </div>
     </div>
 
     <table class="table">
@@ -41,7 +44,7 @@
                 <th>Azienda</th>
                 <th>Ultima ricerca</th>
                 <th>Stato</th>
-                <th>Notizie trovate</th>
+                <th>Notizie in archivio</th>
                 <th>Dettaglio fonti</th>
             </tr>
         </thead>
@@ -102,18 +105,59 @@
         tbody.innerHTML = rows.map(r => {
             const info = STATUS_LABELS[r.status] || { label: r.status, badge: 'badge-primary' };
             const lastSearched = r.last_searched_at ? new Date(r.last_searched_at).toLocaleString('it-IT') : '-';
-            const detail = r.providers_detail || r.error_message || '-';
+            const detail = formatProviders(r.providers_detail) || r.error_message || '-';
+
+            // Link straight to this company's stored news instead of only
+            // reporting a number from the last run.
+            const archived = r.news_in_archive || 0;
+            const newsCell = archived > 0
+                ? `<a href="/news?company_id=${r.company_id}" class="btn btn-sm btn-primary">${archived} notizie →</a>`
+                : '0';
 
             return `
                 <tr>
                     <td><strong>${r.company_name}</strong></td>
                     <td>${lastSearched}</td>
                     <td><span class="badge ${info.badge}">${info.label}</span></td>
-                    <td>${r.articles_found}</td>
+                    <td>${newsCell}</td>
                     <td style="font-size: 12px; color: #7f8c8d;">${detail}</td>
                 </tr>
             `;
         }).join('');
+    }
+
+    // Turn "googlenewsrss:0, gdelt:error(HTTP 429), gnews:error(quota
+    // exceeded earlier this run), rss:0" into something readable.
+    function formatProviders(detail) {
+        if (!detail) return null;
+        const NAMES = {
+            googlenewsrss: 'Google News', gdelt: 'GDELT',
+            gnews: 'GNews', rss: 'RSS', testnews: 'Test'
+        };
+        return detail.split(',').map(part => {
+            const [rawName, ...rest] = part.trim().split(':');
+            const name = NAMES[rawName] || rawName;
+            const value = rest.join(':');
+            if (value === '0') return `${name}: nessun risultato`;
+            if (/^\d+$/.test(value)) return `<strong style="color:#27ae60;">${name}: ${value}</strong>`;
+            if (value.includes('429') || value.includes('quota')) return `${name}: limite raggiunto`;
+            if (value.includes('disabled earlier')) return `${name}: sospeso`;
+            if (value.includes('403')) return `${name}: bloccato`;
+            if (value.startsWith('error')) return `${name}: errore`;
+            return `${name}: ${value}`;
+        }).join(' &middot; ');
+    }
+
+    async function clearLogs() {
+        if (!confirm('Pulire lo storico delle ricerche fallite (limiti raggiunti, errori)?\n\nLe righe con notizie trovate restano.')) return;
+        try {
+            const response = await fetch('/api/coverage?only_failed=true', { method: 'DELETE' });
+            const data = await response.json();
+            alert(`${data.deleted} righe rimosse dallo storico.`);
+            loadCoverage();
+        } catch (error) {
+            alert('Errore: ' + error.message);
+        }
     }
 
     document.getElementById('search-input').addEventListener('input', debounce(loadCoverage, 400));

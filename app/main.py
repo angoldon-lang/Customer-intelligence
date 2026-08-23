@@ -62,6 +62,19 @@ app = FastAPI(
 )
 
 
+@app.exception_handler(Exception)
+def unhandled_exception_handler(request: Request, exc: Exception):
+    """
+    Always answer with JSON, never a bare text/HTML 500.
+
+    The dashboard does `await response.json()` on every call, so an
+    unhandled server error used to surface in the browser as the useless
+    "JSON.parse: unexpected character at line 1 column 1".
+    """
+    print(f"[ERROR] {request.method} {request.url.path}: {type(exc).__name__}: {exc}")
+    return JSONResponse(status_code=500, content={"detail": f"Errore interno: {exc}"})
+
+
 @app.on_event("shutdown")
 def on_shutdown():
     """Stop background jobs so the process can exit cleanly on Ctrl+C."""
@@ -254,6 +267,14 @@ def get_search_coverage(status: str = None, search: str = None, db: Session = De
         query = query.filter(Company.company_name.ilike(f"%{search}%"))
     companies = query.order_by(Company.company_name).all()
 
+    # How many news items are actually stored per company, so the page can
+    # link straight to them instead of only reporting the last run's count.
+    stored_counts = dict(
+        db.query(NewsItem.company_id, func.count(NewsItem.id))
+        .group_by(NewsItem.company_id)
+        .all()
+    )
+
     coverage = []
     for c in companies:
         log = logs_by_company.get(c.id)
@@ -266,11 +287,29 @@ def get_search_coverage(status: str = None, search: str = None, db: Session = De
             "last_searched_at": log.searched_at.isoformat() if log else None,
             "status": row_status,
             "articles_found": log.articles_found if log else 0,
+            "news_in_archive": stored_counts.get(c.id, 0),
             "providers_detail": log.providers_detail if log else None,
             "error_message": log.error_message if log else None,
         })
 
     return {"total": len(coverage), "coverage": coverage}
+
+
+@app.delete("/api/coverage")
+def clear_search_logs(only_failed: bool = True, db: Session = Depends(get_db)):
+    """
+    Clear the search-coverage history.
+
+    Old rows keep showing failures from runs that are long over (rate
+    limits, providers disabled mid-run). By default only those are cleared,
+    so successful entries stay; pass only_failed=false to wipe everything.
+    """
+    query = db.query(SearchLog)
+    if only_failed:
+        query = query.filter(SearchLog.status.in_(["blocked", "error", "no_results"]))
+    deleted = query.delete(synchronize_session=False)
+    db.commit()
+    return {"deleted": deleted, "message": "Storico ricerche pulito"}
 
 
 @app.get("/api/clusters")
@@ -458,6 +497,7 @@ def add_cluster_recipient(
 def list_news(
     status: str = None,
     category: str = None,
+    company_id: int = None,
     limit: int = 50,
     db: Session = Depends(get_db)
 ):
@@ -468,6 +508,8 @@ def list_news(
         query = query.filter_by(status=status)
     if category:
         query = query.filter_by(category=category)
+    if company_id:
+        query = query.filter_by(company_id=company_id)
 
     total = query.count()
     news = query.order_by(NewsItem.created_at.desc()).limit(limit).all()

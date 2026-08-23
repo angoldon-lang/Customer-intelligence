@@ -29,6 +29,9 @@ class Company(Base):
     # Relationships
     news_items = relationship("NewsItem", back_populates="company", cascade="all, delete-orphan")
     clusters = relationship("CompanyCluster", back_populates="company", cascade="all, delete-orphan")
+    # Without this cascade, deleting a company hits a FOREIGN KEY constraint
+    # from search_logs and the request dies with a non-JSON 500.
+    search_logs = relationship("SearchLog", back_populates="company", cascade="all, delete-orphan")
 
 
 class Cluster(Base):
@@ -186,4 +189,4 @@ class SearchLog(Base):
     providers_detail = Column(Text)  # e.g. "google_news_rss:0, gdelt:blocked, gnews:disabled"
     error_message = Column(Text)
 
-    company = relationship("Company")
+    company = relationship("Company", back_populates="search_logs")

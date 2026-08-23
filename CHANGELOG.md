@@ -4,6 +4,37 @@ Tutte le modifiche rilevanti a questo progetto sono documentate in questo file.
 Il formato segue [Keep a Changelog](https://keepachangelog.com/) e il progetto
 usa [Semantic Versioning](https://semver.org/lang/it/).
 
+## [0.7.0] - 2026-08-23
+
+### Fixed
+- **Impossibile cancellare un'azienda** ("JSON.parse: unexpected character at
+  line 1 column 1"): la tabella `search_logs`, aggiunta in 0.5.0, non aveva il
+  cascade sulla foreign key verso `companies`. La cancellazione violava il
+  vincolo, l'eccezione non gestita restituiva un 500 in testo semplice, e il
+  browser falliva sul `JSON.parse`. Ora il cascade c'e' e la cancellazione
+  rimuove anche notizie e log collegati.
+- Aggiunto un handler globale: un errore server risponde sempre in JSON, mai
+  piu' con HTML/testo che il frontend non sa interpretare.
+
+### Added
+- **Come NON consumare crediti Anthropic** - nuova opzione `CLASSIFIER_MODE`:
+  - `heuristic`: classificazione per parole chiave, **completamente gratuita
+    e offline** (`app/services/heuristic_classifier.py`). Assegna categoria e
+    punteggi, e soprattutto abbassa la rilevanza del rumore (cronaca, sport,
+    necrologi) che riempiva i risultati di aziende come Banca d'Italia.
+  - `off`: salva le notizie senza punteggi, classifichi a mano.
+  - `ai` (default): Claude, qualita' migliore.
+- **Modello configurabile** (`CLAUDE_MODEL`), con default `claude-haiku-4-5`,
+  molto piu' economico di Sonnet e piu' che adeguato per valutare uno snippet.
+  Il parametro `thinking` viene ora inviato solo ai modelli che lo accettano.
+- **Copertura ricerca**: la colonna notizie e' ora un link diretto alle notizie
+  di quell'azienda (`/news?company_id=...`), invece del solo numero dell'ultimo
+  run; il dettaglio fonti e' scritto in italiano leggibile ("GDELT: limite
+  raggiunto" al posto di "gdelt:error(HTTP 429)"); nuovo pulsante
+  "Pulisci errori" per rimuovere dallo storico le righe fallite
+  (`DELETE /api/coverage`).
+- `/api/news` accetta ora il filtro `company_id`.
+
 ## [0.6.1] - 2026-08-23
 
 ### Added

@@ -14,6 +14,16 @@ class Settings:
     CLAUDE_API_KEY: Optional[str] = os.getenv("CLAUDE_API_KEY")
     ANTHROPIC_API_KEY: Optional[str] = os.getenv("ANTHROPIC_API_KEY")
 
+    # Classification mode:
+    #   "ai"        -> classify with Claude (best quality, consumes credits)
+    #   "heuristic" -> keyword-based scoring, no API calls, zero cost
+    #   "off"       -> save news with neutral scores, classify manually
+    CLASSIFIER_MODE: str = os.getenv("CLASSIFIER_MODE", "ai").lower()
+
+    # Model used for AI classification. Haiku is ~5x cheaper than Sonnet and
+    # plenty for scoring a short news snippet.
+    CLAUDE_MODEL: str = os.getenv("CLAUDE_MODEL", "claude-haiku-4-5")
+
     # Database
     DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./app.db")
 
