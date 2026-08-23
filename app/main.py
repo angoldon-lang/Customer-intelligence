@@ -13,7 +13,8 @@ from app import __version__
 from app.config import settings
 from app.database import init_db, get_db
 from sqlalchemy import func
-from app.models import Company, Cluster, NewsItem, Report, MonitoringRun, NewsSource, CompanyCluster, ClusterRecipient, SearchLog
+from app.models import Company, Cluster, NewsItem, Report, MonitoringRun, NewsSource, CompanyCluster, ClusterRecipient, SearchLog, AppSetting
+from app.services import settings_store
 from app.services import DataImporter, DataNormalizer, ClusterManager
 from app.services.classifier import NewsClassifier
 from app.services.reporter import ReportGenerator
@@ -73,6 +74,20 @@ def unhandled_exception_handler(request: Request, exc: Exception):
     """
     print(f"[ERROR] {request.method} {request.url.path}: {type(exc).__name__}: {exc}")
     return JSONResponse(status_code=500, content={"detail": f"Errore interno: {exc}"})
+
+
+@app.on_event("startup")
+def on_startup():
+    """Load settings saved from the dashboard over the .env defaults."""
+    from app.database import SessionLocal
+
+    db = SessionLocal()
+    try:
+        settings_store.apply_to_runtime(db)
+    except Exception as e:
+        print(f"[WARN] Impossibile caricare le impostazioni salvate: {e}")
+    finally:
+        db.close()
 
 
 @app.on_event("shutdown")
@@ -716,6 +731,64 @@ def list_reports(
     }
 
 
+@app.get("/api/reports/schedule")
+def get_report_schedule(db: Session = Depends(get_db)):
+    """
+    Per-cluster automatic delivery schedule.
+
+    Declared before /api/reports/{report_id} on purpose: FastAPI matches
+    routes in registration order and "schedule" would otherwise be parsed
+    as a report id.
+    """
+    from app.services.report_scheduler import (
+        FREQUENCY_DAYS, DEFAULT_FREQUENCY_DAYS, cluster_is_due,
+    )
+
+    labels = {
+        "daily": "Giornaliera",
+        "2-3x_week": "2-3 volte a settimana",
+        "weekly": "Settimanale",
+        "monthly": "Mensile",
+    }
+
+    clusters = db.query(Cluster).order_by(Cluster.cluster_name).all()
+    now = datetime.utcnow()
+    rows = []
+
+    for c in clusters:
+        recipients = [r.email for r in c.recipients if r.email and r.active]
+        last_sent = (
+            db.query(Report)
+            .filter(Report.cluster_id == c.id, Report.status == "Sent")
+            .order_by(Report.sent_at.desc())
+            .first()
+        )
+        days = FREQUENCY_DAYS.get(c.frequency, DEFAULT_FREQUENCY_DAYS)
+        next_due = None
+        if last_sent and last_sent.sent_at:
+            next_due = (last_sent.sent_at + timedelta(days=days)).isoformat()
+
+        rows.append({
+            "cluster_id": c.id,
+            "cluster_name": c.cluster_name,
+            "active": c.active,
+            "frequency": c.frequency,
+            "frequency_label": labels.get(c.frequency, c.frequency or "-"),
+            "period_days": days,
+            "recipients": recipients,
+            "recipients_count": len(recipients),
+            "last_sent_at": last_sent.sent_at.isoformat() if last_sent and last_sent.sent_at else None,
+            "next_due_at": next_due,
+            "is_due": bool(c.active and recipients and cluster_is_due(db, c, now)),
+        })
+
+    return {
+        "scheduler_running": monitoring_scheduler.is_running,
+        "total": len(rows),
+        "clusters": rows,
+    }
+
+
 @app.get("/api/reports/{report_id}")
 def get_report(report_id: int, db: Session = Depends(get_db)):
     """Get a single report including its rendered HTML body (for preview)."""
@@ -789,6 +862,7 @@ def get_monitoring_status(db: Session = Depends(get_db)):
 
     return {
         "is_running": monitoring_scheduler.is_running,
+        "interval_hours": monitoring_scheduler.interval_hours,
         "run_in_progress": monitoring_scheduler.run_in_progress,
         "classification_issue": monitoring_scheduler.last_classification_issue,
         "last_run": {
@@ -940,6 +1014,21 @@ def cleanup_database(days: int = 180, db: Session = Depends(get_db)):
     }
 
 
+@app.get("/api/settings")
+def get_settings(db: Session = Depends(get_db)):
+    """Current settings (stored values override .env). Secrets are masked."""
+    return settings_store.get_all(db)
+
+
+@app.post("/api/settings")
+def save_settings(payload: dict = Body(...), db: Session = Depends(get_db)):
+    """Persist settings edited from the dashboard."""
+    saved = settings_store.save_settings(db, payload)
+    if not saved:
+        raise HTTPException(status_code=400, detail="Nessuna impostazione valida da salvare")
+    return {"saved": saved, "message": f"{len(saved)} impostazioni salvate"}
+
+
 @app.post("/api/admin/fix-news-urls")
 def fix_news_urls(db: Session = Depends(get_db)):
     """
@@ -1018,7 +1107,7 @@ def send_report(
         raise HTTPException(status_code=400, detail="No recipients configured for this cluster")
 
     # Send email
-    sender = EmailSender()
+    sender = EmailSender(db)
     result = sender.send_report(
         to_emails=recipients,
         subject=report.subject,
@@ -1040,10 +1129,22 @@ def send_report(
         raise HTTPException(status_code=400, detail=result['error'])
 
 
+@app.post("/api/reports/send-due")
+def send_due_reports_now(force: bool = False, db: Session = Depends(get_db)):
+    """
+    Generate and email reports for clusters that are due.
+
+    Runs automatically once a day when the scheduler is on; this endpoint
+    is the manual trigger. `force=true` sends regardless of the schedule.
+    """
+    from app.services.report_scheduler import send_due_reports
+    return send_due_reports(db, force=force)
+
+
 @app.post("/api/email/test-smtp")
-def test_smtp_connection():
+def test_smtp_connection(db: Session = Depends(get_db)):
     """Test SMTP connection."""
-    sender = EmailSender()
+    sender = EmailSender(db)
     result = sender.test_connection()
 
     return result
@@ -1083,7 +1184,7 @@ def send_alert_email(
     if not news:
         raise HTTPException(status_code=404, detail="News not found")
 
-    sender = EmailSender()
+    sender = EmailSender(db)
     result = sender.send_alert(
         to_email=recipient_email,
         company_name=news.company.company_name,

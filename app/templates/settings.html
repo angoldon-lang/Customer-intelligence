@@ -31,23 +31,36 @@
         <form id="smtp-form">
             <div class="form-group">
                 <label>Server SMTP</label>
-                <input type="text" placeholder="smtp.gmail.com" value="smtp.gmail.com">
+                <input type="text" id="smtp-host" placeholder="smtp.gmail.com">
             </div>
 
             <div class="form-group">
                 <label>Porta</label>
-                <input type="number" placeholder="587" value="587">
+                <input type="number" id="smtp-port" placeholder="587">
+            </div>
+
+            <div class="form-group">
+                <label>Utente SMTP</label>
+                <input type="text" id="smtp-user" placeholder="your-email@gmail.com">
             </div>
 
             <div class="form-group">
                 <label>Email mittente</label>
-                <input type="email" placeholder="your-email@gmail.com">
+                <input type="email" id="smtp-from-email" placeholder="your-email@gmail.com">
+                <small style="color: #7f8c8d;">Se vuoto viene usato l'utente SMTP.</small>
+            </div>
+
+            <div class="form-group">
+                <label>Nome mittente</label>
+                <input type="text" id="smtp-from-name" placeholder="Customer Intelligence">
             </div>
 
             <div class="form-group">
                 <label>Password app</label>
-                <input type="password" placeholder="password">
-                <small style="color: #7f8c8d;">Per Gmail: <a href="https://support.google.com/accounts/answer/185833" target="_blank">crea password app</a></small>
+                <input type="password" id="smtp-password" placeholder="password">
+                <small style="color: #7f8c8d;" id="smtp-password-hint">
+                    Per Gmail: <a href="https://support.google.com/accounts/answer/185833" target="_blank">crea password app</a>
+                </small>
             </div>
 
             <button type="button" class="btn btn-primary" onclick="testSMTP()">🧪 Test SMTP</button>
@@ -112,32 +125,48 @@
         <h3>📊 Filtri di default</h3>
         <form id="filters-form">
             <div class="form-group">
-                <label>Tipo azienda da monitorare</label>
-                <select>
-                    <option selected>Cliente</option>
+                <label>Tipo azienda di default (import)</label>
+                <select id="default-company-type">
+                    <option>Cliente</option>
                     <option>Fornitore</option>
                     <option>Prospect</option>
-                    <option>Tutti</option>
                 </select>
             </div>
 
             <div class="form-group">
-                <label>Stato azienda</label>
-                <select>
-                    <option selected>Attiva</option>
-                    <option>Tutte</option>
+                <label>Stato azienda di default (import)</label>
+                <select id="default-company-status">
+                    <option>Attiva</option>
                     <option>Pausa</option>
+                    <option>Archiviata</option>
                 </select>
             </div>
 
             <div class="form-group">
-                <label>Rilevanza minima notizie</label>
-                <select>
+                <label>Rilevanza minima notizie nei report</label>
+                <select id="min-relevance-score">
                     <option value="1">Tutte (1+)</option>
                     <option value="3">Bassa (3+)</option>
-                    <option value="5" selected>Media (5+)</option>
+                    <option value="5">Media (5+)</option>
                     <option value="7">Alta (7+)</option>
                     <option value="9">Critica (9+)</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>Modalità classificazione</label>
+                <select id="classifier-mode">
+                    <option value="ai">AI Claude (consuma crediti)</option>
+                    <option value="heuristic">Euristica offline (gratuita)</option>
+                    <option value="off">Disattivata (salva senza classificare)</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>Modello Claude</label>
+                <select id="claude-model">
+                    <option value="claude-haiku-4-5">claude-haiku-4-5 (economico)</option>
+                    <option value="claude-sonnet-5">claude-sonnet-5 (più accurato)</option>
                 </select>
             </div>
 
@@ -349,6 +378,12 @@
 
             const statusDiv = document.getElementById('scheduler-status');
 
+            // Reflect the interval the scheduler is actually using.
+            const intervalInput = document.getElementById('check-interval');
+            if (intervalInput && data.interval_hours && document.activeElement !== intervalInput) {
+                intervalInput.value = data.interval_hours;
+            }
+
             if (data.run_in_progress) {
                 statusDiv.innerHTML = '⏳ Monitoraggio in corso... (può richiedere alcuni minuti su molte aziende, per non superare i limiti di GDELT/GNews)';
                 statusDiv.style.background = '#cfe2ff';
@@ -508,20 +543,112 @@
 
     document.getElementById('smtp-form').addEventListener('submit', (e) => {
         e.preventDefault();
-        alert('Salvataggio configurazione SMTP sarà implementato nella Fase 3');
+        saveSettings({
+            SMTP_HOST: value('smtp-host'),
+            SMTP_PORT: value('smtp-port'),
+            SMTP_USER: value('smtp-user'),
+            SMTP_FROM_EMAIL: value('smtp-from-email'),
+            SMTP_FROM_NAME: value('smtp-from-name'),
+            // Empty = keep the stored password (the server ignores it).
+            SMTP_PASSWORD: value('smtp-password'),
+        }, 'Configurazione SMTP salvata. Usa "Test SMTP" per verificarla.');
     });
 
-    document.getElementById('scheduler-form').addEventListener('submit', (e) => {
+    document.getElementById('scheduler-form').addEventListener('submit', async (e) => {
         e.preventDefault();
-        alert('Salvataggio configurazione scheduler sarà implementato nella Fase 2');
+        const hours = document.getElementById('check-interval').value;
+        if (!hours) return;
+
+        try {
+            const response = await fetch(`/api/monitoring/start?interval_hours=${encodeURIComponent(hours)}`, {
+                method: 'POST'
+            });
+            if (response.ok) {
+                alert(`Scheduler riavviato con intervallo di ${hours} ore.`);
+                checkSchedulerStatus();
+            } else {
+                const err = await response.json().catch(() => ({}));
+                alert('Errore: ' + (err.detail || 'impossibile salvare l\'intervallo'));
+            }
+        } catch (error) {
+            alert('Errore: ' + error.message);
+        }
     });
 
     document.getElementById('filters-form').addEventListener('submit', (e) => {
         e.preventDefault();
-        alert('Salvataggio filtri sarà implementato nella Fase 2');
+        saveSettings({
+            DEFAULT_COMPANY_TYPE: value('default-company-type'),
+            DEFAULT_COMPANY_STATUS: value('default-company-status'),
+            MIN_RELEVANCE_SCORE: value('min-relevance-score'),
+            CLASSIFIER_MODE: value('classifier-mode'),
+            CLAUDE_MODEL: value('claude-model'),
+        }, 'Filtri di default salvati.');
     });
 
+    function value(id) {
+        const el = document.getElementById(id);
+        return el ? el.value.trim() : '';
+    }
+
+    function setValue(id, val) {
+        const el = document.getElementById(id);
+        if (el && val !== null && val !== undefined && val !== '') {
+            el.value = val;
+        }
+    }
+
+    async function loadSettings() {
+        try {
+            const response = await fetch('/api/settings');
+            const data = await response.json();
+
+            setValue('smtp-host', data.SMTP_HOST);
+            setValue('smtp-port', data.SMTP_PORT);
+            setValue('smtp-user', data.SMTP_USER);
+            setValue('smtp-from-email', data.SMTP_FROM_EMAIL);
+            setValue('smtp-from-name', data.SMTP_FROM_NAME);
+
+            // The password is never sent back - only whether one is stored.
+            const hint = document.getElementById('smtp-password-hint');
+            if (hint && data.SMTP_PASSWORD) {
+                hint.innerHTML = '🔒 Password già salvata. Lascia vuoto per non modificarla.';
+            }
+
+            setValue('default-company-type', data.DEFAULT_COMPANY_TYPE);
+            setValue('default-company-status', data.DEFAULT_COMPANY_STATUS);
+            setValue('min-relevance-score', data.MIN_RELEVANCE_SCORE);
+            setValue('classifier-mode', data.CLASSIFIER_MODE);
+            setValue('claude-model', data.CLAUDE_MODEL);
+        } catch (error) {
+            console.error('Error loading settings:', error);
+        }
+    }
+
+    async function saveSettings(payload, successMessage) {
+        try {
+            const response = await fetch('/api/settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await response.json();
+
+            if (response.ok) {
+                alert('✓ ' + successMessage);
+                document.getElementById('last-action').textContent =
+                    'Impostazioni salvate - ' + new Date().toLocaleString('it-IT');
+                loadSettings();
+            } else {
+                alert('Errore: ' + (data.detail || 'salvataggio fallito'));
+            }
+        } catch (error) {
+            alert('Errore: ' + error.message);
+        }
+    }
+
     // Load status on page load
+    loadSettings();
     checkAPIStatus();
     checkSchedulerStatus();
     loadProvidersStatus();

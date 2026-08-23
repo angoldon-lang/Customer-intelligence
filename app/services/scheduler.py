@@ -72,13 +72,26 @@ class MonitoringScheduler:
         self.scheduler = BackgroundScheduler()
         self.searcher = NewsSearcher()
         self.is_running = False
+        self.interval_hours = None
         self.run_in_progress = False
         self.last_classification_issue = None
         self._run_lock = threading.Lock()
 
     def start(self, interval_hours: int = 24):
-        """Start the monitoring scheduler."""
+        """
+        Start the monitoring scheduler.
+
+        Calling it again while running reschedules the monitoring job, so
+        saving a new interval from Impostazioni takes effect immediately
+        instead of being silently ignored.
+        """
         if self.is_running:
+            self.scheduler.reschedule_job(
+                'news_monitoring',
+                trigger=IntervalTrigger(hours=interval_hours),
+            )
+            self.interval_hours = interval_hours
+            print(f"Monitoring interval updated: {interval_hours}h")
             return
 
         self.scheduler.add_job(
@@ -89,8 +102,19 @@ class MonitoringScheduler:
             replace_existing=True
         )
 
+        # Reports are checked daily; each cluster's own frequency decides
+        # whether it is actually due, so a daily tick covers every tier.
+        self.scheduler.add_job(
+            self._report_job,
+            trigger=IntervalTrigger(hours=24),
+            id='report_dispatch',
+            name='Report Dispatch',
+            replace_existing=True
+        )
+
         self.scheduler.start()
         self.is_running = True
+        self.interval_hours = interval_hours
         print(f"Monitoring scheduler started (interval: {interval_hours}h)")
 
     def stop(self):
@@ -98,6 +122,7 @@ class MonitoringScheduler:
         if self.scheduler.running:
             self.scheduler.shutdown(wait=False)
             self.is_running = False
+            self.interval_hours = None
             print("Monitoring scheduler stopped")
 
     def _run(self, db: Session, limit: int = None) -> Dict[str, Any]:
@@ -154,6 +179,24 @@ class MonitoringScheduler:
             db.close()
             self.run_in_progress = False
             self._run_lock.release()
+
+    def _report_job(self):
+        """Send reports for clusters whose frequency says they're due."""
+        from sqlalchemy.orm import sessionmaker
+        from app.services.report_scheduler import send_due_reports
+
+        SessionFactory = sessionmaker(bind=engine)
+        db = SessionFactory()
+        try:
+            result = send_due_reports(db)
+            if result["sent"] or result["errors"]:
+                print(f"[Report] Invio automatico: {result['sent']} inviati, "
+                      f"{len(result['errors'])} errori")
+        except Exception as e:
+            print(f"Error in report job: {e}")
+            db.rollback()
+        finally:
+            db.close()
 
     def run_once(self, limit: int = None) -> Dict[str, Any]:
         """

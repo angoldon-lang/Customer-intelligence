@@ -4,6 +4,59 @@ Tutte le modifiche rilevanti a questo progetto sono documentate in questo file.
 Il formato segue [Keep a Changelog](https://keepachangelog.com/) e il progetto
 usa [Semantic Versioning](https://semver.org/lang/it/).
 
+## [0.9.0] - 2026-08-23
+
+### Added
+- **Impostazioni salvate davvero** (`GET`/`POST /api/settings`, tabella
+  `app_settings`): la configurazione SMTP e i filtri di default non mostrano
+  piu' "sara' implementato nella Fase 2/3". I valori salvati dalla dashboard
+  hanno la precedenza su quelli in `.env`, senza riavviare il server. La
+  password SMTP non viene mai rimandata al browser e lasciare il campo vuoto
+  non la cancella.
+- **Invio schedulato del report per cluster**: ogni cluster usa la propria
+  frequenza (giornaliera / 2-3 volte a settimana / settimanale / mensile) per
+  decidere quando e' in scadenza; con lo scheduler attivo un controllo
+  giornaliero genera e invia il report ai destinatari del cluster
+  (`app/services/report_scheduler.py`).
+- **Nuova sezione "Invio automatico per cluster"** nella pagina Report:
+  frequenza, numero di destinatari, ultimo invio e prossimo invio per ogni
+  cluster, con "Invia ora" per singolo cluster, "Invia quelli in scadenza" e
+  "Invia tutti ora" (`GET /api/reports/schedule`, `POST /api/reports/send-due`).
+- **Pulsante "📧 Invia" direttamente nella lista report**: non serve piu'
+  aprire l'anteprima per inviare.
+- **Scelta di modello e modalita' di classificazione dalla dashboard**
+  (AI Claude / euristica offline gratuita / disattivata), per tenere sotto
+  controllo il consumo di crediti Anthropic.
+
+### Fixed
+- **Un errore temporaneo di Google News interrompeva l'intero run**: bastavano
+  due errori (tipicamente `503 Service Unavailable`, cioe' "stai andando
+  troppo veloce", non un guasto) perche' il provider principale venisse
+  disabilitato fino alla fine del run e tutte le aziende successive
+  risultassero non cercate. Ora:
+  - le richieste sono distanziate di 2,5s (e' cio' che evita davvero i 503);
+  - gli errori temporanei (429/500/502/503/504) vengono ritentati con
+    backoff crescente, rispettando l'header `Retry-After`;
+  - il provider si mette in **pausa** solo dopo 4 aziende consecutive fallite
+    e **si riattiva da solo** dopo 3 minuti, invece di restare spento;
+  - un `403` (muro di consenso) non viene ritentato: non si sbloccherebbe.
+  Stesso trattamento per GDELT: dopo un rate limit va in pausa 5 minuti e
+  poi riprende, invece di essere spento per tutto il run.
+- **Aziende saltate a causa di un blocco venivano segnate come "controllate"**:
+  `last_monitored_at` veniva aggiornato anche quando nessuna fonte aveva
+  risposto, quindi l'azienda non veniva ricontrollata fino al turno
+  successivo (anche una settimana) per colpa di un'interruzione di due
+  minuti. Ora una ricerca bloccata non consuma il turno e l'azienda rientra
+  nel run seguente.
+- **Modale "Dettagli" del cluster troppo alta**: con molte aziende cresceva
+  oltre lo schermo e i pulsanti (Chiudi compreso) finivano fuori dalla
+  finestra. Ora la modale e' alta al massimo 88vh, intestazione e pulsanti
+  restano sempre visibili, le tabelle interne scorrono, e si chiude con ESC
+  o cliccando fuori.
+- **Salvataggio dell'intervallo dello scheduler ignorato** quando lo
+  scheduler era gia' avviato: il job ora viene rischedulato e l'intervallo
+  attivo e' mostrato nel form.
+
 ## [0.8.1] - 2026-08-23
 
 ### Fixed

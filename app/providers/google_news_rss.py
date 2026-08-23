@@ -21,7 +21,23 @@ from app.config import settings
 
 GOOGLE_NEWS_RSS_ENDPOINT = "https://news.google.com/rss/search"
 
-MIN_REQUEST_INTERVAL = 1.0  # seconds between requests
+# Google News throttles bursts with 503/429. Keeping a comfortable gap
+# between requests is what actually prevents them; retries only paper over
+# a rate that is already too fast.
+MIN_REQUEST_INTERVAL = 2.5  # seconds between requests
+
+# Transient HTTP statuses: retried with backoff instead of counting as a
+# provider failure. 503 in particular is Google's "slow down", not an
+# outage, and treating it as fatal used to kill the whole run.
+RETRY_STATUSES = {429, 500, 502, 503, 504}
+RETRY_BACKOFF = [5, 15, 40]  # seconds before each retry
+
+# After this many consecutive failed companies the provider pauses (it is
+# clearly not working right now), then reopens automatically so a temporary
+# block doesn't skip every remaining company in the run.
+MAX_CONSECUTIVE_FAILURES = 4
+COOLDOWN_SECONDS = 180
+
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
 
 
@@ -33,6 +49,7 @@ class GoogleNewsRSSProvider(NewsSourceProvider):
         self.days = days
         self._last_request_at = 0.0
         self.blocked = False
+        self._blocked_until = 0.0
         self._consecutive_failures = 0
         self.last_call_error = None
         self._skip_notice_shown = False
@@ -44,27 +61,129 @@ class GoogleNewsRSSProvider(NewsSourceProvider):
         self._last_request_at = time.monotonic()
 
     def _record_failure(self, reason: str):
+        """
+        Pause the provider after repeated failures, don't kill it.
+
+        Google News is the main free source: disabling it for the rest of
+        the run (the old behaviour, after just 2 errors) meant one burst of
+        503s left every remaining company unsearched. Now it pauses and
+        reopens by itself after a cooldown.
+        """
         self._consecutive_failures += 1
-        if self._consecutive_failures >= 2:
-            print(f"[GoogleNewsRSS] {reason} twice in a row, disabling for the rest of this run")
+        if self._consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
             self.blocked = True
+            self._blocked_until = time.monotonic() + COOLDOWN_SECONDS
+            self._skip_notice_shown = False
+            print(
+                f"[GoogleNewsRSS] {reason}: {self._consecutive_failures} fallimenti consecutivi, "
+                f"pausa di {COOLDOWN_SECONDS}s poi riprova automaticamente"
+            )
         else:
-            print(f"[GoogleNewsRSS] {reason} (attempt {self._consecutive_failures}/2 before disabling)")
+            print(
+                f"[GoogleNewsRSS] {reason} "
+                f"({self._consecutive_failures}/{MAX_CONSECUTIVE_FAILURES} prima della pausa)"
+            )
+
+    def _cooldown_expired(self) -> bool:
+        """Reopen the circuit once the cooldown has elapsed (half-open)."""
+        if not self.blocked:
+            return True
+        if time.monotonic() < self._blocked_until:
+            return False
+
+        print("[GoogleNewsRSS] Pausa terminata, riprovo")
+        self.blocked = False
+        self._consecutive_failures = 0
+        self._skip_notice_shown = False
+        return True
+
+    def _get_with_retry(self, params: dict, company_name: str):
+        """
+        GET the feed, retrying transient errors with backoff.
+
+        Returns the response, or None if every attempt failed (the reason is
+        left in self.last_call_error).
+        """
+        attempts = len(RETRY_BACKOFF) + 1
+
+        for attempt in range(attempts):
+            self._throttle()
+            try:
+                response = requests.get(
+                    GOOGLE_NEWS_RSS_ENDPOINT,
+                    params=params,
+                    timeout=self.timeout,
+                    headers={"User-Agent": USER_AGENT},
+                )
+            except requests.RequestException as e:
+                self.last_call_error = "request exception"
+                if attempt == attempts - 1:
+                    print(f"[GoogleNewsRSS] Error searching '{company_name}': {e}")
+                    return None
+                wait = RETRY_BACKOFF[attempt]
+                print(f"[GoogleNewsRSS] '{company_name}': {type(e).__name__}, riprovo tra {wait}s")
+                time.sleep(wait)
+                continue
+
+            if response.status_code in RETRY_STATUSES:
+                self.last_call_error = f"HTTP {response.status_code}"
+                if attempt == attempts - 1:
+                    print(
+                        f"[GoogleNewsRSS] '{company_name}': HTTP {response.status_code} "
+                        f"dopo {attempts} tentativi"
+                    )
+                    return None
+                # Honour Retry-After when Google sends one.
+                wait = RETRY_BACKOFF[attempt]
+                retry_after = response.headers.get("Retry-After")
+                if retry_after and retry_after.isdigit():
+                    wait = max(wait, min(int(retry_after), 120))
+                print(
+                    f"[GoogleNewsRSS] '{company_name}': HTTP {response.status_code} "
+                    f"(temporaneo), riprovo tra {wait}s"
+                )
+                time.sleep(wait)
+                continue
+
+            if response.status_code == 403:
+                # Not transient: a consent/robot wall, retrying won't help.
+                self.last_call_error = "HTTP 403"
+                print(f"[GoogleNewsRSS] '{company_name}': HTTP 403 (bloccato)")
+                return None
+
+            try:
+                response.raise_for_status()
+            except requests.RequestException as e:
+                self.last_call_error = f"HTTP {response.status_code}"
+                print(f"[GoogleNewsRSS] Error searching '{company_name}': {e}")
+                return None
+
+            # Clear the error left by an earlier attempt: this company was
+            # searched successfully, and a stale reason here would show it
+            # as blocked on the coverage page.
+            self.last_call_error = None
+            return response
+
+        return None
 
     def search_company_news(
         self, company_name: str, keywords: List[str] = None
     ) -> List[NewsArticle]:
         # Reset per-call: distinguishes "0 results, request genuinely
         # succeeded" from "0 results because this specific call failed"
-        # (which the run-level `blocked` flag alone can't show before the
-        # circuit breaker actually trips after 2 failures).
+        # (which the `blocked` flag alone can't show before the circuit
+        # breaker actually trips).
         self.last_call_error = None
 
-        if self.blocked:
+        if not self._cooldown_expired():
             if not self._skip_notice_shown:
-                print("[GoogleNewsRSS] Disabilitato per il resto del run: le aziende successive vengono saltate")
+                remaining = int(self._blocked_until - time.monotonic())
+                print(
+                    f"[GoogleNewsRSS] In pausa per altri ~{remaining}s "
+                    f"(troppi errori consecutivi): le aziende di questo intervallo vengono saltate"
+                )
                 self._skip_notice_shown = True
-            self.last_call_error = "disabled earlier this run"
+            self.last_call_error = "in pausa dopo errori ripetuti"
             return []
 
         query = f'"{company_name}" when:{self.days}d'
@@ -79,23 +198,9 @@ class GoogleNewsRSSProvider(NewsSourceProvider):
             "ceid": ceid,
         }
 
-        self._throttle()
-        try:
-            response = requests.get(
-                GOOGLE_NEWS_RSS_ENDPOINT,
-                params=params,
-                timeout=self.timeout,
-                headers={"User-Agent": USER_AGENT},
-            )
-            if response.status_code in (403, 429):
-                self._record_failure(f"HTTP {response.status_code}")
-                self.last_call_error = f"HTTP {response.status_code}"
-                return []
-            response.raise_for_status()
-        except requests.RequestException as e:
-            print(f"[GoogleNewsRSS] Error searching '{company_name}': {e}")
-            self._record_failure("request exception")
-            self.last_call_error = "request exception"
+        response = self._get_with_retry(params, company_name)
+        if response is None:
+            self._record_failure(self.last_call_error or "richiesta fallita")
             return []
 
         parsed = feedparser.parse(response.content)

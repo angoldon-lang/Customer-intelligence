@@ -16,6 +16,10 @@ GDELT_ENDPOINT = "https://api.gdeltproject.org/api/v2/doc/doc"
 MIN_REQUEST_INTERVAL = 5.0  # seconds between requests
 BACKOFF_SECONDS = 30  # wait once on a 429 before giving the retry a chance
 
+# A 429 means "too fast right now", not "down for the day": pause, then
+# reopen automatically so the remaining companies still get searched.
+COOLDOWN_SECONDS = 300
+
 
 class GDELTProvider(NewsSourceProvider):
     """Broad news coverage via GDELT's free DOC 2.0 search API.
@@ -29,8 +33,21 @@ class GDELTProvider(NewsSourceProvider):
         self.timeout = timeout or settings.NEWS_SEARCH_TIMEOUT
         self._last_request_at = 0.0
         self.rate_limited = False
+        self._blocked_until = 0.0
         self.last_call_error = None
         self._skip_notice_shown = False
+
+    def _cooldown_expired(self) -> bool:
+        """Reopen the circuit once the rate-limit cooldown has elapsed."""
+        if not self.rate_limited:
+            return True
+        if time.monotonic() < self._blocked_until:
+            return False
+
+        print("[GDELT] Pausa terminata, riprovo")
+        self.rate_limited = False
+        self._skip_notice_shown = False
+        return True
 
     def _throttle(self):
         elapsed = time.monotonic() - self._last_request_at
@@ -53,13 +70,14 @@ class GDELTProvider(NewsSourceProvider):
     ) -> List[NewsArticle]:
         self.last_call_error = None
 
-        if self.rate_limited:
+        if not self._cooldown_expired():
             # Say this once, not once per company: on a large company list
             # it buries every other line in the log.
             if not self._skip_notice_shown:
-                print("[GDELT] Disabilitato per il resto del run: le aziende successive vengono saltate")
+                remaining = int(self._blocked_until - time.monotonic())
+                print(f"[GDELT] In pausa per altri ~{remaining}s (rate limit): aziende saltate nel frattempo")
                 self._skip_notice_shown = True
-            self.last_call_error = "disabled earlier this run"
+            self.last_call_error = "in pausa dopo rate limit"
             return []
 
         query = f'"{company_name}"'
@@ -78,8 +96,10 @@ class GDELTProvider(NewsSourceProvider):
         try:
             response = self._get(params)
             if response.status_code == 429:
-                print("[GDELT] Still rate limited after backoff, disabling GDELT for the rest of this run")
+                print(f"[GDELT] Ancora rate limited dopo il backoff: pausa di {COOLDOWN_SECONDS}s, poi riprova")
                 self.rate_limited = True
+                self._blocked_until = time.monotonic() + COOLDOWN_SECONDS
+                self._skip_notice_shown = False
                 self.last_call_error = "HTTP 429"
                 return []
             response.raise_for_status()

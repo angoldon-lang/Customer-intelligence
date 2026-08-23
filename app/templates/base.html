@@ -410,11 +410,16 @@
 
         .modal-content {
             background: white;
-            padding: 30px;
+            padding: 0 30px 24px 30px;
             border-radius: 8px;
             width: 90%;
-            max-width: 500px;
+            max-width: 620px;
             box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            /* Without a height cap the modal grows past the viewport when a
+               cluster has many companies, pushing the close button off
+               screen with no way to scroll to it. */
+            max-height: 88vh;
+            overflow-y: auto;
         }
 
         .modal-header {
@@ -422,6 +427,35 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
+            /* Keep the ✕ reachable while scrolling a long modal. */
+            position: sticky;
+            top: 0;
+            background: white;
+            padding: 24px 0 12px 0;
+            border-bottom: 1px solid #ecf0f1;
+            z-index: 1;
+        }
+
+        /* Long lists inside a modal scroll on their own, so the action
+           buttons underneath stay visible. */
+        .modal-scroll {
+            max-height: 34vh;
+            overflow-y: auto;
+            border: 1px solid #ecf0f1;
+            border-radius: 4px;
+        }
+        .modal-scroll .table {
+            margin: 0;
+        }
+        .modal-actions {
+            position: sticky;
+            bottom: 0;
+            background: white;
+            padding-top: 14px;
+            border-top: 1px solid #ecf0f1;
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
         }
 
         .modal-header h2 {
@@ -511,6 +545,19 @@
                 document.getElementById('health-status').className = 'health-badge warning';
                 document.getElementById('health-status').textContent = '✗ Errore connessione';
             });
+
+        // Any modal closes with ESC or a click on the backdrop, so a
+        // too-tall dialog can never trap the user with no way out.
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                document.querySelectorAll('.modal.active').forEach(m => m.classList.remove('active'));
+            }
+        });
+        document.addEventListener('click', (e) => {
+            if (e.target.classList && e.target.classList.contains('modal')) {
+                e.target.classList.remove('active');
+            }
+        });
     </script>
 
     {% block scripts %}{% endblock %}

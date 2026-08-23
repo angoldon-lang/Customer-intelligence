@@ -3,6 +3,7 @@
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from email.utils import formataddr
 from typing import List, Dict, Any
 from app.config import settings
 
@@ -10,12 +11,24 @@ from app.config import settings
 class EmailSender:
     """Send emails via SMTP."""
 
-    def __init__(self):
-        self.smtp_host = settings.SMTP_HOST
-        self.smtp_port = settings.SMTP_PORT
-        self.smtp_user = settings.SMTP_USER
-        self.smtp_password = settings.SMTP_PASSWORD
-        self.from_email = settings.SMTP_FROM_EMAIL
+    def __init__(self, db=None):
+        # Settings saved from Impostazioni win over .env; without a session
+        # (e.g. background jobs that don't have one) fall back to .env.
+        if db is not None:
+            from app.services.settings_store import get_setting
+            self.smtp_host = get_setting(db, "SMTP_HOST")
+            self.smtp_port = get_setting(db, "SMTP_PORT")
+            self.smtp_user = get_setting(db, "SMTP_USER")
+            self.smtp_password = get_setting(db, "SMTP_PASSWORD")
+            self.from_email = get_setting(db, "SMTP_FROM_EMAIL") or self.smtp_user
+            self.from_name = get_setting(db, "SMTP_FROM_NAME")
+        else:
+            self.smtp_host = settings.SMTP_HOST
+            self.smtp_port = settings.SMTP_PORT
+            self.smtp_user = settings.SMTP_USER
+            self.smtp_password = settings.SMTP_PASSWORD
+            self.from_email = settings.SMTP_FROM_EMAIL
+            self.from_name = settings.SMTP_FROM_NAME
 
     def send_report(
         self,
@@ -36,7 +49,7 @@ class EmailSender:
             # Create message
             msg = MIMEMultipart('alternative')
             msg['Subject'] = subject
-            msg['From'] = self.from_email
+            msg['From'] = formataddr((self.from_name, self.from_email)) if self.from_name else self.from_email
             msg['To'] = ', '.join(to_emails)
 
             # Attach text version

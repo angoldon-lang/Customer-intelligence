@@ -25,14 +25,24 @@ class NewsSearcher:
     """Search for news across providers, dedupe, and classify by relevance."""
 
     def __init__(self):
+        self.classifier = self._build_classifier()
+
+    @staticmethod
+    def _build_classifier():
+        """
+        Pick the classifier for CLASSIFIER_MODE.
+
+        Rebuilt at the start of every run, not just once, so switching mode
+        from Impostazioni (e.g. to the free heuristic one to stop consuming
+        Anthropic credits) takes effect without restarting the server.
+        """
         # CLASSIFIER_MODE lets you avoid API credits entirely:
         # "heuristic" classifies by keywords offline, "off" skips scoring.
         if settings.CLASSIFIER_MODE == "heuristic":
             from app.services.heuristic_classifier import HeuristicClassifier
-            self.classifier = HeuristicClassifier()
             print("[NewsSearcher] Classificazione: euristica (gratuita, nessuna API)")
-        else:
-            self.classifier = NewsClassifier()
+            return HeuristicClassifier()
+        return NewsClassifier()
 
     def _build_providers(self, db: Session) -> List[NewsSourceProvider]:
         """Build the provider list for one monitoring run."""
@@ -78,7 +88,11 @@ class NewsSearcher:
 
     # Substrings of last_call_error that indicate a rate-limit/circuit
     # breaker condition rather than a genuine one-off failure.
-    _BLOCKED_REASONS = ("HTTP 429", "HTTP 403", "disabled earlier this run", "quota exceeded", "malformed RSS response")
+    _BLOCKED_REASONS = (
+        "HTTP 429", "HTTP 403", "HTTP 503",
+        "disabled earlier this run", "in pausa",
+        "quota exceeded", "malformed RSS response",
+    )
 
     @classmethod
     def _classify_no_results(cls, provider_summary: List[str]) -> str:
@@ -254,9 +268,12 @@ class NewsSearcher:
         if companies is None:
             companies = db.query(Company).filter_by(status="Attiva").all()
 
-        # Clear last run's circuit breaker: the account problem may well
-        # have been fixed since (credits topped up, key replaced), and this
-        # searcher instance is reused for the lifetime of the process.
+        # Rebuild the classifier so a mode/model change saved from
+        # Impostazioni applies to this run. This also clears last run's
+        # circuit breaker: the account problem may well have been fixed
+        # since (credits topped up, key replaced), and this searcher
+        # instance is reused for the lifetime of the process.
+        self.classifier = self._build_classifier()
         self.classifier.disabled_reason = None
 
         providers = self._build_providers(db)
@@ -296,8 +313,13 @@ class NewsSearcher:
                     providers_detail=providers_detail,
                 ))
 
-                company.last_monitored_at = datetime.utcnow()
-                db.add(company)
+                # Only count it as monitored if a search actually happened.
+                # When every provider was blocked/paused, marking it checked
+                # would push the company back to the end of its tier (up to
+                # a week) over an outage that lasted a couple of minutes.
+                if log_status not in ("blocked", "error"):
+                    company.last_monitored_at = datetime.utcnow()
+                    db.add(company)
 
             except Exception as e:
                 result["errors"].append(f"{company.company_name}: {str(e)}")

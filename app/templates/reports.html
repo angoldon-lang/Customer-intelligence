@@ -38,6 +38,41 @@
     </div>
 </div>
 
+<div class="card" style="margin-bottom: 30px;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+        <h3 style="margin: 0;">📅 Invio automatico per cluster</h3>
+        <div>
+            <button class="btn btn-sm btn-primary" onclick="sendDueReports(false)">▶️ Invia quelli in scadenza</button>
+            <button class="btn btn-sm btn-success" onclick="sendDueReports(true)">📧 Invia tutti ora</button>
+        </div>
+    </div>
+
+    <div id="schedule-status" style="padding: 12px; border-radius: 4px; margin-bottom: 15px; background: #fff3cd; color: #856404;">
+        Caricamento stato scheduler...
+    </div>
+
+    <table class="table" style="margin: 0;">
+        <thead>
+            <tr>
+                <th>Cluster</th>
+                <th>Frequenza</th>
+                <th>Destinatari</th>
+                <th>Ultimo invio</th>
+                <th>Prossimo invio</th>
+                <th>Azioni</th>
+            </tr>
+        </thead>
+        <tbody id="schedule-table">
+            <tr><td colspan="6" style="text-align: center; color: #7f8c8d;">Caricamento...</td></tr>
+        </tbody>
+    </table>
+
+    <small style="color: #7f8c8d; display: block; margin-top: 12px;">
+        Frequenza e destinatari si impostano nella pagina <a href="/clusters">Cluster</a>.
+        Con lo scheduler attivo il sistema controlla una volta al giorno quali cluster sono in scadenza e invia il report automaticamente.
+    </small>
+</div>
+
 <div class="card">
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
         <h3>Report generati</h3>
@@ -75,7 +110,7 @@
 
 <!-- Modal Preview Report -->
 <div id="report-modal" class="modal">
-    <div class="modal-content" style="max-width: 700px; max-height: 80vh; overflow-y: auto;">
+    <div class="modal-content" style="max-width: 760px;">
         <div class="modal-header">
             <h2>Anteprima report</h2>
             <button class="modal-close" onclick="closeReportModal()">✕</button>
@@ -85,7 +120,7 @@
             Caricamento...
         </div>
 
-        <div style="display: flex; gap: 10px; justify-content: flex-end;">
+        <div class="modal-actions">
             <button class="btn btn-danger btn-sm" onclick="closeReportModal()">Chiudi</button>
             <button class="btn btn-success btn-sm" onclick="sendReport()">📧 Invia email</button>
         </div>
@@ -176,6 +211,9 @@
                         <button class="btn btn-sm btn-primary" onclick="viewReport(${r.id})">
                             👁️ Anteprima
                         </button>
+                        <button class="btn btn-sm btn-success" onclick="sendReportById(${r.id})">
+                            📧 Invia
+                        </button>
                     </td>
                 </tr>
             `;
@@ -258,22 +296,152 @@
         currentReportId = null;
     }
 
-    async function sendReport() {
+    function sendReport() {
+        // Send from inside the preview modal.
         if (!currentReportId) return;
+        sendReportById(currentReportId, true);
+    }
 
-        if (!confirm('Inviare il report ai destinatari configurati?')) return;
+    async function sendReportById(reportId, fromModal = false) {
+        if (!confirm('Inviare il report ai destinatari configurati per questo cluster?')) return;
 
         try {
-            const response = await fetch(`/api/reports/${currentReportId}/send`, { method: 'POST' });
+            const response = await fetch(`/api/reports/${reportId}/send`, { method: 'POST' });
+            const data = await response.json();
+
             if (response.ok) {
-                const data = await response.json();
                 alert(`✓ Report inviato a ${data.recipients} destinatari!`);
-                closeReportModal();
+                if (fromModal) closeReportModal();
                 loadReports();
+                loadSchedule();
             } else {
-                const error = await response.json();
-                alert('Errore: ' + error.detail);
+                alert('Errore: ' + (data.detail || 'invio fallito'));
             }
+        } catch (error) {
+            alert('Errore: ' + error.message);
+        }
+    }
+
+    async function loadSchedule() {
+        try {
+            const response = await fetch('/api/reports/schedule');
+            const data = await response.json();
+
+            const statusDiv = document.getElementById('schedule-status');
+            if (data.scheduler_running) {
+                statusDiv.innerHTML = '✓ Scheduler ATTIVO - i report in scadenza vengono inviati automaticamente ogni giorno.';
+                statusDiv.style.background = '#d4edda';
+                statusDiv.style.color = '#155724';
+            } else {
+                statusDiv.innerHTML = '⚠ Scheduler INATTIVO - nessun invio automatico. Avvialo da <a href="/settings">Impostazioni</a> oppure usa i pulsanti qui sopra.';
+                statusDiv.style.background = '#fff3cd';
+                statusDiv.style.color = '#856404';
+            }
+
+            const tbody = document.getElementById('schedule-table');
+            const clusters = data.clusters || [];
+
+            if (clusters.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:#7f8c8d;">Nessun cluster configurato.</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = clusters.map(c => {
+                const fmt = (iso) => iso ? new Date(iso).toLocaleDateString('it-IT') : '-';
+
+                let recipients;
+                if (c.recipients_count === 0) {
+                    recipients = '<span class="badge badge-danger">nessuno</span>';
+                } else {
+                    recipients = `<span title="${c.recipients.join(', ')}">${c.recipients_count} destinatari</span>`;
+                }
+
+                let next;
+                if (!c.active) {
+                    next = '<span class="badge badge-warning">cluster non attivo</span>';
+                } else if (c.recipients_count === 0) {
+                    next = '<span style="color:#7f8c8d;">-</span>';
+                } else if (c.is_due) {
+                    next = '<span class="badge badge-success">in scadenza ora</span>';
+                } else {
+                    next = fmt(c.next_due_at);
+                }
+
+                return `
+                    <tr>
+                        <td><strong>${c.cluster_name}</strong></td>
+                        <td>${c.frequency_label}<br><small style="color:#7f8c8d;">ultimi ${c.period_days} giorni</small></td>
+                        <td>${recipients}</td>
+                        <td>${fmt(c.last_sent_at)}</td>
+                        <td>${next}</td>
+                        <td>
+                            <button class="btn btn-sm btn-success" onclick="sendClusterNow(${c.cluster_id}, ${c.period_days})"
+                                ${c.recipients_count === 0 ? 'disabled title="Aggiungi prima un destinatario"' : ''}>
+                                📧 Invia ora
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        } catch (error) {
+            console.error('Error loading schedule:', error);
+        }
+    }
+
+    async function sendClusterNow(clusterId, daysBack) {
+        if (!confirm('Generare e inviare subito il report per questo cluster?')) return;
+
+        try {
+            // Generate a fresh report over the cluster's own period, then send it.
+            const genResponse = await fetch(`/api/reports/generate?cluster_id=${clusterId}&days_back=${daysBack}`, {
+                method: 'POST'
+            });
+            const gen = await genResponse.json();
+
+            if (!genResponse.ok) {
+                alert('Errore nella generazione: ' + (gen.detail || 'sconosciuto'));
+                return;
+            }
+
+            const response = await fetch(`/api/reports/${gen.id}/send`, { method: 'POST' });
+            const data = await response.json();
+
+            if (response.ok) {
+                alert(`✓ Report inviato a ${data.recipients} destinatari!`);
+            } else {
+                alert('Report generato ma non inviato: ' + (data.detail || 'invio fallito'));
+            }
+            loadReports();
+            loadSchedule();
+        } catch (error) {
+            alert('Errore: ' + error.message);
+        }
+    }
+
+    async function sendDueReports(force) {
+        const message = force
+            ? 'Generare e inviare ORA il report per tutti i cluster attivi con destinatari, ignorando la frequenza?'
+            : 'Inviare i report per i cluster attualmente in scadenza?';
+        if (!confirm(message)) return;
+
+        try {
+            const response = await fetch(`/api/reports/send-due?force=${force}`, { method: 'POST' });
+            const data = await response.json();
+
+            if (!response.ok) {
+                alert('Errore: ' + (data.detail || 'invio fallito'));
+                return;
+            }
+
+            let summary = `Report inviati: ${data.sent}`;
+            if (data.skipped_not_due) summary += `\nNon ancora in scadenza: ${data.skipped_not_due}`;
+            if (data.skipped_no_recipients) summary += `\nSenza destinatari: ${data.skipped_no_recipients}`;
+            if (data.skipped_no_news) summary += `\nNessuna notizia nel periodo: ${data.skipped_no_news}`;
+            if (data.errors && data.errors.length) summary += `\n\nErrori:\n- ${data.errors.join('\n- ')}`;
+
+            alert(summary);
+            loadReports();
+            loadSchedule();
         } catch (error) {
             alert('Errore: ' + error.message);
         }
@@ -285,7 +453,8 @@
     // Load on page load
     loadClusters();
     loadReports();
+    loadSchedule();
     // Refresh every minute
-    setInterval(loadReports, 60000);
+    setInterval(() => { loadReports(); loadSchedule(); }, 60000);
 </script>
 {% endblock %}

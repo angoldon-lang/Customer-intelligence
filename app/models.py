@@ -190,3 +190,19 @@ class SearchLog(Base):
     error_message = Column(Text)
 
     company = relationship("Company", back_populates="search_logs")
+
+
+class AppSetting(Base):
+    """Runtime settings edited from the dashboard.
+
+    Values here override the corresponding .env variable, so SMTP and the
+    default filters can be changed from Impostazioni without editing files
+    or restarting the server.
+    """
+
+    __tablename__ = "app_settings"
+
+    id = Column(Integer, primary_key=True)
+    key = Column(String(100), nullable=False, unique=True, index=True)
+    value = Column(Text)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
