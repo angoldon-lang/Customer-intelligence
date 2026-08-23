@@ -228,11 +228,18 @@ class NewsSearcher:
             "companies_needing_enrichment": 0,
             "news_found": 0,
             "news_saved": 0,
+            "news_unclassified": 0,
+            "classification_disabled_reason": None,
             "errors": []
         }
 
         if companies is None:
             companies = db.query(Company).filter_by(status="Attiva").all()
+
+        # Clear last run's circuit breaker: the account problem may well
+        # have been fixed since (credits topped up, key replaced), and this
+        # searcher instance is reused for the lifetime of the process.
+        self.classifier.disabled_reason = None
 
         providers = self._build_providers(db)
 
@@ -257,6 +264,9 @@ class NewsSearcher:
                     result["news_found"] += len(news_items)
                     saved = self.process_and_classify_news(db, company, news_items)
                     result["news_saved"] += len(saved)
+                    result["news_unclassified"] += sum(
+                        1 for n in saved if n.status == "Needs Review"
+                    )
                     log_status = "found"
                 else:
                     log_status = self._classify_no_results(provider_summary)
@@ -281,4 +291,5 @@ class NewsSearcher:
                 ))
 
         db.commit()
+        result["classification_disabled_reason"] = self.classifier.disabled_reason
         return result

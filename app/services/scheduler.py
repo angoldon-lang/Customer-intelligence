@@ -73,6 +73,7 @@ class MonitoringScheduler:
         self.searcher = NewsSearcher()
         self.is_running = False
         self.run_in_progress = False
+        self.last_classification_issue = None
         self._run_lock = threading.Lock()
 
     def start(self, interval_hours: int = 24):
@@ -118,11 +119,18 @@ class MonitoringScheduler:
         db.add(monitoring_run)
         db.commit()
 
+        self.last_classification_issue = result.get("classification_disabled_reason")
+
         print(
             f"[{end_time}] Monitoring completed: {result['companies_checked']} companies checked, "
             f"{result['news_saved']} news items saved, "
             f"{result['companies_needing_enrichment']} skipped (need enrichment)"
         )
+        if self.last_classification_issue:
+            print(
+                f"  -> {result.get('news_unclassified', 0)} notizie salvate SENZA classificazione AI "
+                f"({self.last_classification_issue}). Risolvi e usa Riclassifica dalla pagina Notizie."
+            )
 
         return result
 

@@ -529,6 +529,12 @@ def reclassify_news(news_id: int, db: Session = Depends(get_db)):
             tax_code=company.tax_code if company else None,
         )
     except Exception as e:
+        reason = NewsClassifier._fatal_reason(e)
+        if reason:
+            raise HTTPException(
+                status_code=402,
+                detail=f"{reason}. Risolvi su console.anthropic.com, poi riprova.",
+            )
         raise HTTPException(status_code=502, detail=f"Classificazione fallita: {e}")
 
     news.summary = classification.get("summary") or news.summary
@@ -666,6 +672,7 @@ def get_monitoring_status(db: Session = Depends(get_db)):
     return {
         "is_running": monitoring_scheduler.is_running,
         "run_in_progress": monitoring_scheduler.run_in_progress,
+        "classification_issue": monitoring_scheduler.last_classification_issue,
         "last_run": {
             "finished_at": last_run.finished_at.isoformat() if last_run else None,
             "companies_checked": last_run.companies_processed if last_run else 0,
@@ -900,6 +907,9 @@ def test_claude_api():
         )
         return {"success": True, "message": "Connessione a Claude riuscita"}
     except Exception as e:
+        reason = NewsClassifier._fatal_reason(e)
+        if reason:
+            return {"success": False, "error": f"{reason} - vedi console.anthropic.com (Plans & Billing)"}
         return {"success": False, "error": str(e)}
 
 

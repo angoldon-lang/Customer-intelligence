@@ -31,6 +31,30 @@ class NewsClassifier:
         # explicitly so a CLAUDE_API_KEY-only .env actually authenticates.
         api_key = settings.CLAUDE_API_KEY or settings.ANTHROPIC_API_KEY
         self.client = Anthropic(api_key=api_key) if api_key else None
+        # Set once an account-level failure (no credit, invalid key, no
+        # permission) is seen: those never recover mid-run, so retrying for
+        # every remaining article just burns minutes and floods the log.
+        self.disabled_reason: str = None
+
+    # Account-level failures: retrying within the same run is pointless.
+    _FATAL_ERROR_MARKERS = (
+        "credit balance is too low",
+        "authentication_error",
+        "permission_error",
+        "invalid x-api-key",
+    )
+
+    @classmethod
+    def _fatal_reason(cls, error: Exception) -> str:
+        """Return a short human reason if this error is account-level."""
+        text = str(error).lower()
+        if "credit balance is too low" in text:
+            return "credito Anthropic esaurito"
+        if "authentication_error" in text or "invalid x-api-key" in text:
+            return "API key non valida"
+        if "permission_error" in text:
+            return "API key senza permessi"
+        return None
 
     @staticmethod
     def sdk_supports_messages() -> bool:
@@ -93,6 +117,16 @@ class NewsClassifier:
                 "Configura la API key Claude in .env per la classificazione AI",
             )
 
+        if self.disabled_reason:
+            # Already established this run that the account can't serve
+            # requests - skip the doomed call instead of repeating it once
+            # per article.
+            return self.fallback_result(
+                title,
+                f"Classificazione AI sospesa: {self.disabled_reason}",
+                "Risolvi il problema sull'account Anthropic, poi usa Riclassifica",
+            )
+
         prompt = f"""Sei un analista di customer intelligence per una società di consulenza IT.
 
 Analizza la seguente notizia relativa al cliente indicato.
@@ -140,14 +174,21 @@ Regole:
 - Mantieni tono professionale, sintetico e operativo
 - Restituisci SOLO il JSON, niente altro"""
 
-        message = self.client.messages.create(
-            model="claude-sonnet-5",
-            max_tokens=1024,
-            thinking={"type": "disabled"},
-            messages=[
-                {"role": "user", "content": prompt}
-            ]
-        )
+        try:
+            message = self.client.messages.create(
+                model="claude-sonnet-5",
+                max_tokens=1024,
+                thinking={"type": "disabled"},
+                messages=[
+                    {"role": "user", "content": prompt}
+                ]
+            )
+        except Exception as e:
+            reason = self._fatal_reason(e)
+            if reason:
+                self.disabled_reason = reason
+                print(f"[Classifier] {reason}: classificazione AI sospesa per il resto del run")
+            raise
 
         response_text = next((b.text for b in message.content if b.type == "text"), "").strip()
 

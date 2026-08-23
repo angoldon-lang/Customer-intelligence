@@ -4,6 +4,26 @@ Tutte le modifiche rilevanti a questo progetto sono documentate in questo file.
 Il formato segue [Keep a Changelog](https://keepachangelog.com/) e il progetto
 usa [Semantic Versioning](https://semver.org/lang/it/).
 
+## [0.6.1] - 2026-08-23
+
+### Added
+- **Circuit breaker sulla classificazione AI**: se l'account Anthropic
+  restituisce un errore che non può risolversi da solo (credito esaurito,
+  API key non valida o senza permessi), la classificazione viene sospesa
+  per il resto del run invece di ritentare per ogni articolo. Nel run
+  dell'utente questo significava 150 chiamate destinate a fallire (con la
+  relativa latenza e centinaia di righe di log); ora ne basta una.
+  Il breaker si azzera ad ogni nuovo run, quindi appena ricarichi i crediti
+  riprende da solo senza riavviare il server.
+- Il motivo dello stop è ora **visibile in Impostazioni** al termine del
+  monitoraggio ("credito Anthropic esaurito", "API key non valida", ...),
+  con il link diretto a console.anthropic.com e il promemoria di usare
+  ↻ Riclassifica - invece di essere sepolto nei log del terminale.
+  Esposto anche via `GET /api/monitoring/status` (`classification_issue`).
+- Messaggi di errore leggibili al posto del dump grezzo dell'API in
+  "Test API" e nella riclassificazione (HTTP 402 con la causa reale).
+- Il risultato del monitoraggio riporta ora anche `news_unclassified`.
+
 ## [0.6.0] - 2026-08-23
 
 Revisione globale del codice concentrata su ricerca e visualizzazione notizie.

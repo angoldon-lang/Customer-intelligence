@@ -357,9 +357,17 @@
             if (wasRunInProgress && data.last_run) {
                 wasRunInProgress = false;
                 const r = data.last_run;
-                statusDiv.innerHTML = `✓ Monitoraggio completato: ${r.companies_checked} aziende controllate, ${r.news_saved} notizie salvate`;
-                statusDiv.style.background = '#d4edda';
-                statusDiv.style.color = '#155724';
+                if (data.classification_issue) {
+                    statusDiv.innerHTML = `✓ Monitoraggio completato: ${r.companies_checked} aziende, ${r.news_saved} notizie salvate.<br>`
+                        + `⚠ Classificazione AI sospesa (<strong>${data.classification_issue}</strong>): le notizie sono salvate ma non classificate.<br>`
+                        + `Risolvi su <a href="https://console.anthropic.com/settings/billing" target="_blank">console.anthropic.com</a>, poi usa ↻ Riclassifica nella pagina Notizie.`;
+                    statusDiv.style.background = '#fff3cd';
+                    statusDiv.style.color = '#856404';
+                } else {
+                    statusDiv.innerHTML = `✓ Monitoraggio completato: ${r.companies_checked} aziende controllate, ${r.news_saved} notizie salvate`;
+                    statusDiv.style.background = '#d4edda';
+                    statusDiv.style.color = '#155724';
+                }
                 return;
             }
 
