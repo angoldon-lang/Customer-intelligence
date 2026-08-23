@@ -153,7 +153,7 @@
                                 <strong>Azienda:</strong> ${n.company_name}
                             </p>
                             <p style="margin: 5px 0; color: #7f8c8d; font-size: 14px;">
-                                <strong>Fonte:</strong> <a href="${url}" target="_blank" style="color: #3498db;">${n.source_name || 'N/D'}</a>
+                                <strong>Fonte:</strong> <a href="${url}" target="_blank" rel="noopener noreferrer" style="color: #3498db;">${n.source_name || 'N/D'}</a>
                                 ${publishedDate ? ` &middot; ${publishedDate}` : ''}
                             </p>
                             ${n.summary ? `<p style="margin: 8px 0 0 0; color: #555; font-size: 14px;">${n.summary}</p>` : ''}
@@ -179,16 +179,16 @@
                     </div>
 
                     <div style="display: flex; gap: 10px; justify-content: flex-end;">
-                        <button class="btn btn-sm btn-primary" onclick="reclassifyNews(${n.id})">
+                        <button type="button" class="btn btn-sm btn-primary" onclick="reclassifyNews(${n.id})">
                             ↻ Riclassifica
                         </button>
-                        <button class="btn btn-sm btn-success" onclick="approveNews(${n.id})">
+                        <button type="button" class="btn btn-sm btn-success" onclick="approveNews(${n.id})">
                             ✓ Approva
                         </button>
-                        <button class="btn btn-sm btn-danger" onclick="rejectNews(${n.id})">
+                        <button type="button" class="btn btn-sm btn-danger" onclick="rejectNews(${n.id})">
                             ✗ Rifiuta
                         </button>
-                        <a href="${url}" target="_blank" class="btn btn-sm btn-primary">
+                        <a href="${url}" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-primary">
                             → Leggi
                         </a>
                     </div>

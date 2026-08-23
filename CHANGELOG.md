@@ -4,6 +4,21 @@ Tutte le modifiche rilevanti a questo progetto sono documentate in questo file.
 Il formato segue [Keep a Changelog](https://keepachangelog.com/) e il progetto
 usa [Semantic Versioning](https://semver.org/lang/it/).
 
+## [0.7.1] - 2026-08-23
+
+### Fixed
+- **Cliccando su una notizia si apriva un feed XML di Google News**
+  ("Questo feed non e' disponibile"): i link salvati erano quelli RSS
+  (`news.google.com/rss/articles/...`), che nel browser servono l'XML
+  invece di reindirizzare all'articolo. Ora vengono normalizzati al
+  salvataggio; per le notizie gia' archiviate c'e' il pulsante
+  "🔗 Correggi link notizie" in Impostazioni → Manutenzione
+  (`POST /api/admin/fix-news-urls`).
+- I pulsanti Approva / Rifiuta / Riclassifica non avevano `type="button"`:
+  in HTML il default e' `submit`, quindi potevano provocare una
+  navigazione anziche' limitarsi alla chiamata API.
+- Aggiunto `rel="noopener noreferrer"` ai link esterni delle notizie.
+
 ## [0.7.0] - 2026-08-23
 
 ### Fixed

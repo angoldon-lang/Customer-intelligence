@@ -864,6 +864,28 @@ def cleanup_database(days: int = 180, db: Session = Depends(get_db)):
     }
 
 
+@app.post("/api/admin/fix-news-urls")
+def fix_news_urls(db: Session = Depends(get_db)):
+    """
+    Repair Google News links already stored with the /rss/ path.
+
+    Those open as raw RSS XML ("Questo feed non e' disponibile.") instead of
+    redirecting to the article; new items are normalized on save, this fixes
+    the ones saved before.
+    """
+    from app.providers.google_news_rss import GoogleNewsRSSProvider
+
+    affected = db.query(NewsItem).filter(
+        NewsItem.url.like("%news.google.com/rss/articles/%")
+    ).all()
+
+    for item in affected:
+        item.url = GoogleNewsRSSProvider.normalize_article_url(item.url)
+    db.commit()
+
+    return {"fixed": len(affected), "message": f"{len(affected)} link corretti"}
+
+
 @app.post("/api/admin/reset")
 def reset_system(confirm: str = "", db: Session = Depends(get_db)):
     """

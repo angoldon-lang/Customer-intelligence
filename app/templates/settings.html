@@ -148,6 +148,9 @@
     <div class="card">
         <h3>🗑️ Manutenzione</h3>
         <div style="display: flex; gap: 10px;">
+            <button type="button" class="btn btn-primary btn-sm" onclick="fixNewsUrls()">
+                🔗 Correggi link notizie
+            </button>
             <button type="button" class="btn btn-danger btn-sm" onclick="cleanupDatabase()">
                 🧹 Pulisci database
             </button>
@@ -446,6 +449,20 @@
         } catch (error) {
             alert('Errore: ' + error.message);
             checkSchedulerStatus();
+        }
+    }
+
+    async function fixNewsUrls() {
+        try {
+            const response = await fetch('/api/admin/fix-news-urls', { method: 'POST' });
+            const data = await response.json();
+            if (response.ok) {
+                alert(data.message + '\n\nI link Google News ora aprono l\'articolo invece del feed XML.');
+            } else {
+                alert('Errore: ' + (data.detail || 'correzione fallita'));
+            }
+        } catch (error) {
+            alert('Errore: ' + error.message);
         }
     }
 

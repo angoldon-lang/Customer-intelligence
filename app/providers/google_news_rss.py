@@ -123,7 +123,7 @@ class GoogleNewsRSSProvider(NewsSourceProvider):
 
             results.append(NewsArticle(
                 title=title,
-                url=url,
+                url=self.normalize_article_url(url),
                 source_name=source_name,
                 source_type="google_news_rss",
                 published_date=self._parse_entry_date(entry),
@@ -133,6 +133,21 @@ class GoogleNewsRSSProvider(NewsSourceProvider):
             ))
 
         return results
+
+    @staticmethod
+    def normalize_article_url(url: str) -> str:
+        """
+        Turn an RSS item link into one a browser can actually open.
+
+        Google News RSS items link to news.google.com/rss/articles/<id>.
+        Opening that path in a browser serves the RSS XML (often just
+        "Questo feed non e' disponibile.") instead of redirecting to the
+        publisher. Dropping the /rss segment gives the regular article URL,
+        which redirects properly.
+        """
+        if not url:
+            return url
+        return url.replace("://news.google.com/rss/articles/", "://news.google.com/articles/", 1)
 
     @staticmethod
     def _parse_entry_date(entry) -> datetime:
