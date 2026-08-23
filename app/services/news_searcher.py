@@ -155,6 +155,11 @@ class NewsSearcher:
             if existing:
                 continue
 
+            # A failed AI classification must NOT lose the article: the news
+            # itself was really found and is still useful. Save it with a
+            # neutral fallback classification and flag it "Needs Review" so
+            # it stays visible and can be re-classified later.
+            item_status = "New"
             try:
                 classification = self.classifier.classify_news(
                     company_name=company.company_name,
@@ -167,9 +172,16 @@ class NewsSearcher:
                     website=company.website,
                     tax_code=company.tax_code,
                 )
+                if classification.get("confidence_score") == 1 and not self.classifier.client:
+                    item_status = "Needs Review"
             except Exception as e:
-                print(f"[NewsSearcher] Classification failed for '{news_data['title']}': {e}")
-                continue
+                print(f"[NewsSearcher] Classification failed for '{news_data['title']}': {e} - saving unclassified")
+                classification = self.classifier.fallback_result(
+                    news_data["title"],
+                    f"Classificazione AI fallita: {e}",
+                    "Verifica la configurazione Claude, poi riclassifica dalla pagina Notizie",
+                )
+                item_status = "Needs Review"
 
             news_item = NewsItem(
                 company_id=company.id,
@@ -187,7 +199,7 @@ class NewsSearcher:
                 confidence_score=classification.get("confidence_score", 5),
                 access_status=news_data.get("access_status", "available"),
                 license_scope=news_data.get("license_scope", "metadata_only"),
-                status="New",
+                status=item_status,
                 created_at=datetime.utcnow(),
             )
 

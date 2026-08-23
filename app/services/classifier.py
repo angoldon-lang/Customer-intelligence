@@ -32,6 +32,34 @@ class NewsClassifier:
         api_key = settings.CLAUDE_API_KEY or settings.ANTHROPIC_API_KEY
         self.client = Anthropic(api_key=api_key) if api_key else None
 
+    @staticmethod
+    def sdk_supports_messages() -> bool:
+        """True if the installed anthropic SDK has the Messages API."""
+        return hasattr(Anthropic, "messages")
+
+    @staticmethod
+    def fallback_result(title: str, why: str, action: str) -> Dict[str, Any]:
+        """
+        Neutral classification used when Claude can't be reached.
+
+        A news item must never be lost just because the AI step failed -
+        the article itself is still real and useful. Scores are set to a
+        neutral 5 (and confidence to 1) so the item is visible but clearly
+        marked as not-yet-AI-reviewed.
+        """
+        return {
+            "summary": title[:200],
+            "category": "Da classificare",
+            "relevance_score": 5,
+            "urgency_score": 5,
+            "commercial_score": 5,
+            "risk_score": 5,
+            "confidence_score": 1,
+            "why_it_matters": why,
+            "suggested_action": action,
+            "email_ready_summary": title[:150],
+        }
+
     def classify_news(
         self,
         company_name: str,
@@ -59,19 +87,11 @@ class NewsClassifier:
             article_text = "(Snippet non disponibile)"
 
         if not self.client:
-            # No API key configured: return a neutral default classification
-            return {
-                "summary": title[:200],
-                "category": "Commercial Signal",
-                "relevance_score": 5,
-                "urgency_score": 5,
-                "commercial_score": 5,
-                "risk_score": 5,
-                "confidence_score": 3,
-                "why_it_matters": "AI classification not available (no API key configured)",
-                "suggested_action": "Configure Claude API key for AI-based classification",
-                "email_ready_summary": title[:150],
-            }
+            return self.fallback_result(
+                title,
+                "Classificazione AI non disponibile (nessuna API key configurata)",
+                "Configura la API key Claude in .env per la classificazione AI",
+            )
 
         prompt = f"""Sei un analista di customer intelligence per una società di consulenza IT.
 

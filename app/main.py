@@ -25,6 +25,36 @@ from app.providers import MockNewsProvider
 # Initialize database tables
 init_db()
 
+
+def _check_anthropic_sdk() -> str:
+    """
+    Warn loudly at startup if the installed anthropic SDK is too old.
+
+    Versions before 0.8 have no Messages API at all (only the legacy
+    `client.completions`), so every classification call fails with
+    "'Anthropic' object has no attribute 'messages'" - once per article,
+    buried in the logs, with no other symptom than news never being
+    classified. Surface it once, up front, instead.
+    """
+    try:
+        import anthropic
+        version = getattr(anthropic, "__version__", "unknown")
+    except ImportError:
+        print("\n  ATTENZIONE: pacchetto 'anthropic' non installato.")
+        print("  Esegui: pip install -r requirements.txt\n")
+        return "not installed"
+
+    if not hasattr(anthropic.Anthropic, "messages"):
+        print("\n" + "=" * 72)
+        print(f"  ATTENZIONE: anthropic SDK {version} e' troppo vecchia (manca la Messages API).")
+        print("  La classificazione AI delle notizie fallira' per OGNI notizia trovata.")
+        print("  Risolvi con:  pip install -r requirements.txt")
+        print("=" * 72 + "\n")
+    return version
+
+
+ANTHROPIC_SDK_VERSION = _check_anthropic_sdk()
+
 app = FastAPI(
     title="Customer Intelligence Monitor",
     description="Monitor news and intelligence about companies",
@@ -80,8 +110,10 @@ def health_check(db: Session = Depends(get_db)):
     return {
         "status": "ok",
         "database": True,
-        "api": bool(settings.CLAUDE_API_KEY),
+        "api": bool(settings.CLAUDE_API_KEY or settings.ANTHROPIC_API_KEY),
         "version": __version__,
+        "anthropic_sdk": ANTHROPIC_SDK_VERSION,
+        "anthropic_sdk_ok": NewsClassifier.sdk_supports_messages(),
     }
 
 
@@ -437,23 +469,80 @@ def list_news(
     if category:
         query = query.filter_by(category=category)
 
+    total = query.count()
     news = query.order_by(NewsItem.created_at.desc()).limit(limit).all()
 
     return {
-        "total": len(news),
+        "total": total,
+        "returned": len(news),
         "news": [
             {
                 "id": n.id,
                 "title": n.title,
-                "company_name": n.company.company_name,
+                "company_name": n.company.company_name if n.company else "-",
                 "category": n.category,
+                # url was missing here, so every "Leggi"/source link in the
+                # news page rendered as undefined
+                "url": n.url,
+                "summary": n.summary,
+                "published_date": n.published_date.isoformat() if n.published_date else None,
                 "relevance_score": n.relevance_score,
+                "confidence_score": n.confidence_score,
                 "status": n.status,
                 "source_name": n.source_name,
             }
             for n in news
         ]
     }
+
+
+@app.post("/api/news/{news_id}/reclassify")
+def reclassify_news(news_id: int, db: Session = Depends(get_db)):
+    """
+    Re-run AI classification on an existing news item.
+
+    Useful for items saved with the neutral fallback because Claude wasn't
+    reachable at monitoring time (missing/invalid API key, stale SDK).
+    """
+    news = db.query(NewsItem).filter_by(id=news_id).first()
+    if not news:
+        raise HTTPException(status_code=404, detail="News item not found")
+
+    classifier = NewsClassifier()
+    if not classifier.client:
+        raise HTTPException(
+            status_code=400,
+            detail="Nessuna API key Claude configurata: impossibile riclassificare",
+        )
+
+    company = news.company
+    try:
+        classification = classifier.classify_news(
+            company_name=company.company_name if company else "",
+            title=news.title,
+            url=news.url,
+            source_name=news.source_name,
+            article_text=news.summary,
+            ateco_description=company.ateco_description if company else None,
+            account_owner=company.account_owner if company else None,
+            website=company.website if company else None,
+            tax_code=company.tax_code if company else None,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Classificazione fallita: {e}")
+
+    news.summary = classification.get("summary") or news.summary
+    news.category = classification.get("category", news.category)
+    news.relevance_score = classification.get("relevance_score", news.relevance_score)
+    news.urgency_score = classification.get("urgency_score", news.urgency_score)
+    news.commercial_score = classification.get("commercial_score", news.commercial_score)
+    news.risk_score = classification.get("risk_score", news.risk_score)
+    news.confidence_score = classification.get("confidence_score", news.confidence_score)
+    if news.status == "Needs Review":
+        news.status = "New"
+    db.commit()
+
+    return {"id": news.id, "category": news.category, "message": "News reclassified"}
 
 
 @app.post("/api/news/{news_id}/status")
@@ -491,14 +580,34 @@ def list_reports(
         "reports": [
             {
                 "id": r.id,
-                "cluster_name": r.cluster.cluster_name,
+                "cluster_name": r.cluster.cluster_name if r.cluster else "-",
                 "period_start": r.period_start.isoformat(),
                 "period_end": r.period_end.isoformat(),
+                "created_at": r.created_at.isoformat() if r.created_at else None,
                 "status": r.status,
                 "subject": r.subject,
             }
             for r in reports
         ]
+    }
+
+
+@app.get("/api/reports/{report_id}")
+def get_report(report_id: int, db: Session = Depends(get_db)):
+    """Get a single report including its rendered HTML body (for preview)."""
+    report = db.query(Report).filter_by(id=report_id).first()
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+
+    return {
+        "id": report.id,
+        "cluster_name": report.cluster.cluster_name if report.cluster else "-",
+        "period_start": report.period_start.isoformat(),
+        "period_end": report.period_end.isoformat(),
+        "created_at": report.created_at.isoformat() if report.created_at else None,
+        "status": report.status,
+        "subject": report.subject,
+        "body_html": report.body_html,
     }
 
 
@@ -747,8 +856,8 @@ def send_report(
     result = sender.send_report(
         to_emails=recipients,
         subject=report.subject,
-        html_content=report.html_content or "<p>Report content</p>",
-        text_content=report.text_content or "Report content"
+        html_content=report.body_html or "<p>Report content</p>",
+        text_content=report.body_text or "Report content"
     )
 
     if result['success']:

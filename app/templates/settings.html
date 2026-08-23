@@ -177,6 +177,10 @@
                 <td>Claude (Anthropic)</td>
             </tr>
             <tr>
+                <td><strong>SDK anthropic:</strong></td>
+                <td id="anthropic-sdk">-</td>
+            </tr>
+            <tr>
                 <td><strong>Fase roadmap:</strong></td>
                 <td>1 - MVP</td>
             </tr>
@@ -200,9 +204,18 @@
             const data = await response.json();
 
             document.getElementById('app-version').textContent = data.version || '-';
+            const sdkCell = document.getElementById('anthropic-sdk');
+            if (sdkCell) {
+                sdkCell.textContent = data.anthropic_sdk || '-';
+                sdkCell.style.color = data.anthropic_sdk_ok ? '' : '#e74c3c';
+            }
 
             const statusDiv = document.getElementById('api-status');
-            if (data.api) {
+            if (data.anthropic_sdk_ok === false) {
+                statusDiv.innerHTML = '⛔ SDK anthropic troppo vecchia (' + (data.anthropic_sdk || '?') + '): la classificazione AI fallirà per ogni notizia.<br>Esegui <code>pip install -r requirements.txt</code> e riavvia il server.';
+                statusDiv.style.background = '#f8d7da';
+                statusDiv.style.color = '#721c24';
+            } else if (data.api) {
                 statusDiv.innerHTML = '✓ API Claude configurata e funzionante';
                 statusDiv.style.background = '#d4edda';
                 statusDiv.style.color = '#155724';

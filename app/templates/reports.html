@@ -173,7 +173,7 @@
                     <td><span class="badge ${statusBadges[r.status] || 'badge-primary'}">${r.status}</span></td>
                     <td>${createDate}</td>
                     <td>
-                        <button class="btn btn-sm btn-primary" onclick="viewReport('${r.id}')">
+                        <button class="btn btn-sm btn-primary" onclick="viewReport(${r.id})">
                             👁️ Anteprima
                         </button>
                     </td>
@@ -212,30 +212,45 @@
     }
 
     async function viewReport(reportId) {
-        const report = allReports.find(r => r.id === reportId);
-        if (!report) return;
-
         currentReportId = reportId;
 
         const preview = document.getElementById('report-preview');
-        preview.innerHTML = `
-            <div>
+        preview.innerHTML = 'Caricamento...';
+        document.getElementById('report-modal').classList.add('active');
+
+        try {
+            // Fetch the full report: the list endpoint doesn't carry the
+            // rendered HTML body, so the preview has to load it on demand.
+            const response = await fetch(`/api/reports/${reportId}`);
+            const report = await response.json();
+
+            if (!response.ok) {
+                preview.innerHTML = `<p style="color:#e74c3c;">Errore: ${report.detail || 'report non trovato'}</p>`;
+                return;
+            }
+
+            const header = `
                 <h4>${report.cluster_name}</h4>
                 <p style="color: #7f8c8d; margin: 10px 0;">
                     ${new Date(report.period_start).toLocaleDateString('it-IT')} →
                     ${new Date(report.period_end).toLocaleDateString('it-IT')}
-                </p>
-                <p style="color: #7f8c8d; margin: 10px 0;">
-                    Status: <span class="badge badge-primary">${report.status}</span>
+                    &middot; Status: <span class="badge badge-primary">${report.status}</span>
                 </p>
                 <hr style="margin: 15px 0;">
-                <p>
-                    <em>Report completo sarà visualizzato qui. Il contenuto HTML è disponibile nel database.</em>
-                </p>
-            </div>
-        `;
+            `;
 
-        document.getElementById('report-modal').classList.add('active');
+            if (report.body_html) {
+                // Render the real email body in a sandboxed iframe so the
+                // report's own CSS can't leak into the dashboard.
+                preview.innerHTML = header + '<iframe id="report-frame" sandbox style="width:100%; height:420px; border:1px solid #ecf0f1; border-radius:4px; background:white;"></iframe>';
+                const frame = document.getElementById('report-frame');
+                frame.srcdoc = report.body_html;
+            } else {
+                preview.innerHTML = header + '<p><em>Questo report non ha contenuto HTML salvato.</em></p>';
+            }
+        } catch (error) {
+            preview.innerHTML = `<p style="color:#e74c3c;">Errore: ${error.message}</p>`;
+        }
     }
 
     function closeReportModal() {

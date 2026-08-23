@@ -23,18 +23,22 @@ class ReportGenerator:
             Report object (not yet sent)
         """
         # Get news items for cluster companies from period
-        from sqlalchemy import and_
+        from sqlalchemy import and_, func
         from app.models import CompanyCluster
 
         company_ids = [cc.company_id for cc in cluster.companies]
         if not company_ids:
             news_items = []
         else:
+            # Not every provider supplies a publication date. Fall back to
+            # created_at for those, otherwise a NULL published_date makes the
+            # comparison NULL and the item silently drops out of every report.
+            effective_date = func.coalesce(NewsItem.published_date, NewsItem.created_at)
             news_items = db.query(NewsItem).filter(
                 and_(
                     NewsItem.company_id.in_(company_ids),
-                    NewsItem.published_date >= period_start,
-                    NewsItem.published_date <= period_end,
+                    effective_date >= period_start,
+                    effective_date <= period_end,
                     NewsItem.status.in_(["Approved", "New"]),
                     NewsItem.relevance_score >= cluster.min_relevance_score,
                 )

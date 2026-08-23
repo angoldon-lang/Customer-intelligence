@@ -13,8 +13,8 @@ GDELT_ENDPOINT = "https://api.gdeltproject.org/api/v2/doc/doc"
 # (429s start almost immediately without pacing). Space requests out and
 # trip a circuit breaker on repeated 429s instead of hammering it once per
 # company across a run of hundreds/thousands of companies.
-MIN_REQUEST_INTERVAL = 1.2  # seconds between requests
-BACKOFF_SECONDS = 20  # wait once on a 429 before giving the retry a chance
+MIN_REQUEST_INTERVAL = 5.0  # seconds between requests
+BACKOFF_SECONDS = 30  # wait once on a 429 before giving the retry a chance
 
 
 class GDELTProvider(NewsSourceProvider):

@@ -186,6 +186,8 @@ La dashboard è completamente funzionante con **8 pagine principali**:
   - **Rilevanza minima**: 1-10
 - Visualizza source, data, categoria
 - Approva/rifiuta notizie
+- **Riclassifica** una notizia con l'AI (↻): utile per le notizie salvate
+  quando Claude non era raggiungibile
 - Link diretto all'articolo
 
 ### 📧 Report email
@@ -249,6 +251,20 @@ restante.
 Impostazioni) esegue il monitoraggio solo sulle prime N aziende scadute,
 utile per verificare rapidamente se la ricerca trova notizie prima di
 lanciare un run completo su migliaia di aziende.
+
+### Le notizie non vengono mai perse se l'AI fallisce
+
+Se la classificazione con Claude non riesce (API key mancante o errata, SDK
+non aggiornata, rete non disponibile), la notizia **viene comunque salvata**
+con una classificazione neutra, categoria "Da classificare" e stato
+`Needs Review`. Resta quindi visibile nella pagina Notizie e può essere
+riclassificata dopo con il pulsante ↻ Riclassifica. Le notizie in
+`Needs Review` non finiscono nei report email finché non vengono approvate.
+
+Se all'avvio vedi un avviso sulla versione della libreria `anthropic`
+(visibile anche in Impostazioni → Info sistema), esegui
+`pip install -r requirements.txt` e riavvia: le versioni troppo vecchie non
+hanno la Messages API e fanno fallire la classificazione di ogni notizia.
 
 ### Aziende ambigue (es. "AR Group", "ASA SRL", "ARMANDO SRL")
 

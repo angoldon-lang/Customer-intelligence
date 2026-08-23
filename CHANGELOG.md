@@ -4,6 +4,53 @@ Tutte le modifiche rilevanti a questo progetto sono documentate in questo file.
 Il formato segue [Keep a Changelog](https://keepachangelog.com/) e il progetto
 usa [Semantic Versioning](https://semver.org/lang/it/).
 
+## [0.6.0] - 2026-08-23
+
+Revisione globale del codice concentrata su ricerca e visualizzazione notizie.
+
+### Fixed
+- **LA causa per cui "le notizie non si vedono"**: se la classificazione AI
+  falliva, la notizia veniva **scartata** (`continue`) invece di essere
+  salvata. Nell'ultimo run dell'utente questo ha buttato via ~100 articoli
+  italiani reali e pertinenti, già trovati correttamente dai provider.
+  Ora una notizia non viene MAI persa per un errore dell'AI: viene salvata
+  con una classificazione neutra, marcata `Needs Review` e categoria
+  "Da classificare", e resta visibile in pagina Notizie.
+- Aggiunto il pulsante **"↻ Riclassifica"** (e `POST /api/news/{id}/reclassify`)
+  per rilanciare la classificazione AI sulle notizie salvate senza, una volta
+  sistemata la configurazione Claude.
+- **`/api/news` non restituiva `url`**: tutti i link "Fonte" e "→ Leggi" nella
+  pagina Notizie puntavano a `undefined`. Aggiunti anche `summary`,
+  `published_date` e `confidence_score`, ora mostrati nella scheda notizia.
+- **Un singolo punteggio nullo faceva sparire TUTTE le notizie**:
+  `n.relevance_score.toFixed(1)` sollevava un TypeError che interrompeva il
+  rendering dell'intera lista. Ora ogni campo è protetto.
+- **L'invio report andava sempre in errore**: usava `report.html_content` /
+  `report.text_content`, campi inesistenti (nel modello sono `body_html` /
+  `body_text`) - AttributeError garantito ad ogni invio.
+- **L'anteprima report non funzionava**: `viewReport('${r.id}')` passava una
+  stringa confrontata con `===` contro un id numerico, quindi non trovava mai
+  il report; e mostrava comunque solo un placeholder. Ora c'è
+  `GET /api/reports/{id}` e l'anteprima renderizza l'HTML reale in un iframe.
+- **I report escludevano silenziosamente le notizie senza data di
+  pubblicazione** (frequente: GDELT e vari RSS non la forniscono): il
+  confronto con `published_date` NULL è NULL, quindi l'articolo spariva. Ora
+  si usa `COALESCE(published_date, created_at)`.
+- `/api/reports` non restituiva `created_at` (la colonna "Data creazione"
+  mostrava la fine periodo).
+- `/api/news` restituiva come `total` il numero di elementi già limitati dal
+  `limit`, non il totale reale (contatore dashboard sbagliato).
+- `/api/health` controllava solo `CLAUDE_API_KEY`, ignorando
+  `ANTHROPIC_API_KEY` benché supportata ovunque.
+
+### Added
+- **Controllo versione SDK all'avvio**: se la libreria `anthropic` installata
+  è troppo vecchia per la Messages API, ora l'app lo dice a caratteri cubitali
+  all'avvio e in Impostazioni, invece di fallire silenziosamente una volta per
+  articolo. Aggiunta la riga "SDK anthropic" in Info sistema.
+- GDELT: intervallo minimo tra richieste alzato da 1.2s a 5s e backoff da 20s
+  a 30s (nei log dell'utente il rate limit scattava comunque quasi subito).
+
 ## [0.5.1] - 2026-08-23
 
 ### Fixed

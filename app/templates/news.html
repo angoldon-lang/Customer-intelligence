@@ -107,7 +107,16 @@
         emptyState.style.display = 'none';
 
         container.innerHTML = news.map(n => {
-            const relevanceColor = n.relevance_score >= 8 ? '#e74c3c' : n.relevance_score >= 6 ? '#f39c12' : '#27ae60';
+            // Scores/category can be null for items saved before AI
+            // classification succeeded - guard every field, otherwise one
+            // null makes .toFixed() throw and the WHOLE list renders empty.
+            const score = Number.isFinite(n.relevance_score) ? n.relevance_score : 0;
+            const relevanceColor = score >= 8 ? '#e74c3c' : score >= 6 ? '#f39c12' : '#27ae60';
+            const category = n.category || 'Da classificare';
+            const url = n.url || '#';
+            const publishedDate = n.published_date
+                ? new Date(n.published_date).toLocaleDateString('it-IT')
+                : '';
             const statusBadges = {
                 'New': 'badge-primary',
                 'Approved': 'badge-success',
@@ -130,8 +139,10 @@
                                 <strong>Azienda:</strong> ${n.company_name}
                             </p>
                             <p style="margin: 5px 0; color: #7f8c8d; font-size: 14px;">
-                                <strong>Fonte:</strong> <a href="${n.url}" target="_blank" style="color: #3498db;">${n.source_name}</a>
+                                <strong>Fonte:</strong> <a href="${url}" target="_blank" style="color: #3498db;">${n.source_name || 'N/D'}</a>
+                                ${publishedDate ? ` &middot; ${publishedDate}` : ''}
                             </p>
+                            ${n.summary ? `<p style="margin: 8px 0 0 0; color: #555; font-size: 14px;">${n.summary}</p>` : ''}
                         </div>
                         <span class="badge ${statusBadges[n.status] || 'badge-primary'}" style="white-space: nowrap; margin-left: 10px;">
                             ${n.status}
@@ -139,7 +150,7 @@
                     </div>
 
                     <div style="display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap;">
-                        <span class="badge badge-primary">Categoria: ${n.category}</span>
+                        <span class="badge badge-primary">Categoria: ${category}</span>
                         <span style="
                             padding: 4px 8px;
                             border-radius: 3px;
@@ -148,18 +159,22 @@
                             background: rgba(52, 152, 219, 0.1);
                             color: ${relevanceColor};
                         ">
-                            Rilevanza: ${n.relevance_score.toFixed(1)}/10
+                            Rilevanza: ${score.toFixed(1)}/10
                         </span>
+                        ${n.confidence_score === 1 ? '<span class="badge badge-warning">Non classificata dall\'AI</span>' : ''}
                     </div>
 
                     <div style="display: flex; gap: 10px; justify-content: flex-end;">
+                        <button class="btn btn-sm btn-primary" onclick="reclassifyNews(${n.id})">
+                            ↻ Riclassifica
+                        </button>
                         <button class="btn btn-sm btn-success" onclick="approveNews(${n.id})">
                             ✓ Approva
                         </button>
                         <button class="btn btn-sm btn-danger" onclick="rejectNews(${n.id})">
                             ✗ Rifiuta
                         </button>
-                        <a href="${n.url}" target="_blank" class="btn btn-sm btn-primary">
+                        <a href="${url}" target="_blank" class="btn btn-sm btn-primary">
                             → Leggi
                         </a>
                     </div>
@@ -178,6 +193,20 @@
             } else {
                 const err = await response.json();
                 alert('Errore: ' + (err.detail || 'impossibile aggiornare la notizia'));
+            }
+        } catch (error) {
+            alert('Errore: ' + error.message);
+        }
+    }
+
+    async function reclassifyNews(newsId) {
+        try {
+            const response = await fetch(`/api/news/${newsId}/reclassify`, { method: 'POST' });
+            const data = await response.json();
+            if (response.ok) {
+                loadNews();
+            } else {
+                alert('Errore: ' + (data.detail || 'riclassificazione fallita'));
             }
         } catch (error) {
             alert('Errore: ' + error.message);
