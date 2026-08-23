@@ -30,6 +30,7 @@ class GDELTProvider(NewsSourceProvider):
         self._last_request_at = 0.0
         self.rate_limited = False
         self.last_call_error = None
+        self._skip_notice_shown = False
 
     def _throttle(self):
         elapsed = time.monotonic() - self._last_request_at
@@ -53,7 +54,11 @@ class GDELTProvider(NewsSourceProvider):
         self.last_call_error = None
 
         if self.rate_limited:
-            print(f"[GDELT] Skipping '{company_name}': disabled earlier this run")
+            # Say this once, not once per company: on a large company list
+            # it buries every other line in the log.
+            if not self._skip_notice_shown:
+                print("[GDELT] Disabilitato per il resto del run: le aziende successive vengono saltate")
+                self._skip_notice_shown = True
             self.last_call_error = "disabled earlier this run"
             return []
 

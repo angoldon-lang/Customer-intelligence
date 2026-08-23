@@ -82,11 +82,22 @@ class NewsSearcher:
 
     @classmethod
     def _classify_no_results(cls, provider_summary: List[str]) -> str:
-        """Explain why a search found nothing: blocked/rate-limited,
-        another kind of error, or genuinely no matching news."""
+        """
+        Explain why a search found nothing.
+
+        If even one provider completed its request, the "no news" answer is
+        genuine and that's what we report - a secondary provider being
+        rate-limited doesn't make the result unreliable. Only when every
+        provider failed is the outcome actually unknown.
+        """
         error_entries = [s for s in provider_summary if ":error(" in s]
         if not error_entries:
             return "no_results"
+
+        # At least one provider answered successfully -> trust that answer.
+        if len(error_entries) < len(provider_summary):
+            return "no_results"
+
         if any(reason in s for s in error_entries for reason in cls._BLOCKED_REASONS):
             return "blocked"
         return "error"

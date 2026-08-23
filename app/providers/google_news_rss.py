@@ -35,6 +35,7 @@ class GoogleNewsRSSProvider(NewsSourceProvider):
         self.blocked = False
         self._consecutive_failures = 0
         self.last_call_error = None
+        self._skip_notice_shown = False
 
     def _throttle(self):
         elapsed = time.monotonic() - self._last_request_at
@@ -60,7 +61,9 @@ class GoogleNewsRSSProvider(NewsSourceProvider):
         self.last_call_error = None
 
         if self.blocked:
-            print(f"[GoogleNewsRSS] Skipping '{company_name}': disabled earlier this run")
+            if not self._skip_notice_shown:
+                print("[GoogleNewsRSS] Disabilitato per il resto del run: le aziende successive vengono saltate")
+                self._skip_notice_shown = True
             self.last_call_error = "disabled earlier this run"
             return []
 

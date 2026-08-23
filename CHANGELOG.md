@@ -4,6 +4,21 @@ Tutte le modifiche rilevanti a questo progetto sono documentate in questo file.
 Il formato segue [Keep a Changelog](https://keepachangelog.com/) e il progetto
 usa [Semantic Versioning](https://semver.org/lang/it/).
 
+## [0.8.1] - 2026-08-23
+
+### Fixed
+- **"Fonte bloccata" mostrato per aziende in cui la ricerca aveva funzionato
+  davvero**: bastava che GDELT o GNews fossero esauriti perche' la riga
+  venisse marcata come bloccata, anche quando Google News RSS aveva cercato
+  regolarmente e non aveva trovato nulla. Ora, se almeno un provider
+  completa la richiesta, il risultato viene considerato attendibile e
+  riportato come "Nessun risultato"; lo stato "bloccata" resta solo quando
+  *tutti* i provider hanno fallito.
+- **Log illeggibile**: una volta disabilitato un provider, veniva stampata
+  una riga per ogni azienda successiva ("Skipping 'X': disabled earlier this
+  run"), seppellendo tutto il resto su anagrafiche grandi. Ora l'avviso
+  compare una volta sola per run.
+
 ## [0.8.0] - 2026-08-23
 
 ### Added
