@@ -4,6 +4,28 @@ Tutte le modifiche rilevanti a questo progetto sono documentate in questo file.
 Il formato segue [Keep a Changelog](https://keepachangelog.com/) e il progetto
 usa [Semantic Versioning](https://semver.org/lang/it/).
 
+## [0.7.2] - 2026-08-23
+
+### Fixed
+- **I link portavano ancora al feed XML** ("/rss/unsupported"): togliere il
+  segmento `/rss` non bastava, Google reindirizza comunque. Ora l'ID
+  dell'articolo viene **decodificato**: per i link "vecchi" l'URL del
+  giornale e' contenuto nell'ID base64 (protobuf) e viene estratto, quindi
+  "Leggi" apre direttamente l'articolo vero; per gli ID recenti, opachi e
+  risolvibili solo da Google, si ripiega su una ricerca sul titolo - che
+  porta comunque all'articolo, invece che su una pagina morta.
+  "🔗 Correggi link notizie" applica la stessa logica alle notizie gia'
+  salvate.
+- **Layout delle schede notizia rotto** (titolo schiacciato in una colonna
+  stretta, badge e pulsanti sulla stessa riga): sostituiti gli stili inline
+  con classi CSS dedicate (`.news-card`), dove ogni sezione e' un blocco a
+  larghezza piena e non puo' finire in linea con le altre.
+- I titoli delle notizie ora passano per un escape HTML: contengono
+  spesso «», & e virgolette, che iniettati grezzi rompevano il markup
+  (ed erano un potenziale XSS, visto che il testo arriva da feed esterni).
+- Stati delle notizie tradotti in italiano nella scheda (Nuova, Approvata,
+  Rifiutata, Da verificare).
+
 ## [0.7.1] - 2026-08-23
 
 ### Fixed

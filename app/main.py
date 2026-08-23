@@ -876,14 +876,20 @@ def fix_news_urls(db: Session = Depends(get_db)):
     from app.providers.google_news_rss import GoogleNewsRSSProvider
 
     affected = db.query(NewsItem).filter(
-        NewsItem.url.like("%news.google.com/rss/articles/%")
+        NewsItem.url.like("%news.google.com%")
     ).all()
 
+    fixed = 0
     for item in affected:
-        item.url = GoogleNewsRSSProvider.normalize_article_url(item.url)
+        # Pass the title so undecodable (newer) ids can still fall back to a
+        # search on the headline instead of staying on a dead feed link.
+        new_url = GoogleNewsRSSProvider.normalize_article_url(item.url, item.title)
+        if new_url and new_url != item.url:
+            item.url = new_url
+            fixed += 1
     db.commit()
 
-    return {"fixed": len(affected), "message": f"{len(affected)} link corretti"}
+    return {"fixed": fixed, "message": f"{fixed} link corretti su {len(affected)} controllati"}
 
 
 @app.post("/api/admin/reset")

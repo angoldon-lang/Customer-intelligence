@@ -286,6 +286,57 @@
             color: #f57f17;
         }
 
+        /* News cards: plain stacked blocks. Everything here is a full-width
+           row, so a long headline or many buttons can never push the other
+           rows onto the same line. */
+        .news-card {
+            border: 1px solid #ecf0f1;
+            border-left: 4px solid #3498db;
+            border-radius: 8px;
+            padding: 18px 20px;
+            margin-bottom: 15px;
+            background: white;
+        }
+        .news-card__title {
+            margin: 0 0 8px 0;
+            color: #2c3e50;
+            font-size: 16px;
+            line-height: 1.4;
+        }
+        .news-card__meta {
+            margin: 0 0 12px 0;
+            color: #7f8c8d;
+            font-size: 13px;
+        }
+        .news-card__summary {
+            margin: 0 0 12px 0;
+            color: #555;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+        .news-card__tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            align-items: center;
+            margin-bottom: 14px;
+        }
+        .news-card__actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            justify-content: flex-end;
+            border-top: 1px solid #f4f6f7;
+            padding-top: 12px;
+        }
+        .news-card__score {
+            padding: 4px 8px;
+            border-radius: 3px;
+            font-size: 12px;
+            font-weight: 600;
+            background: #f4f6f7;
+        }
+
         .search-box {
             margin-bottom: 20px;
             display: flex;

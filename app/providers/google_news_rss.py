@@ -9,6 +9,9 @@ index larger outlets.
 
 from typing import List, Dict, Any
 from datetime import datetime
+from urllib.parse import quote_plus
+import base64
+import re
 import time
 import requests
 import feedparser
@@ -123,7 +126,7 @@ class GoogleNewsRSSProvider(NewsSourceProvider):
 
             results.append(NewsArticle(
                 title=title,
-                url=self.normalize_article_url(url),
+                url=self.normalize_article_url(url, title),
                 source_name=source_name,
                 source_type="google_news_rss",
                 published_date=self._parse_entry_date(entry),
@@ -135,19 +138,70 @@ class GoogleNewsRSSProvider(NewsSourceProvider):
         return results
 
     @staticmethod
-    def normalize_article_url(url: str) -> str:
+    def normalize_article_url(url: str, title: str = None) -> str:
         """
         Turn an RSS item link into one a browser can actually open.
 
         Google News RSS items link to news.google.com/rss/articles/<id>.
-        Opening that path in a browser serves the RSS XML (often just
-        "Questo feed non e' disponibile.") instead of redirecting to the
-        publisher. Dropping the /rss segment gives the regular article URL,
-        which redirects properly.
+        A browser opening that path gets the RSS XML back, or a redirect to
+        /rss/unsupported - never the article. Two cases:
+
+        * Older ids embed the publisher URL in a base64 protobuf: decode it
+          and return the real article link (best outcome).
+        * Newer ids (AU_yqL...) are opaque and can only be resolved by
+          Google itself, so fall back to a news search on the headline,
+          which reliably lands on the article.
         """
-        if not url:
+        if not url or "news.google.com" not in url:
             return url
-        return url.replace("://news.google.com/rss/articles/", "://news.google.com/articles/", 1)
+
+        match = re.search(r"/articles/([A-Za-z0-9_\-]+)", url)
+        if match:
+            decoded = GoogleNewsRSSProvider._decode_article_id(match.group(1))
+            if decoded:
+                return decoded
+
+        if title:
+            # Strip the " - Publisher" suffix Google appends to headlines.
+            query = re.sub(r"\s+-\s+[^-]+$", "", title).strip() or title
+            return "https://www.google.com/search?q=" + quote_plus(query)
+
+        return url
+
+    @staticmethod
+    def _decode_article_id(article_id: str) -> str:
+        """Extract the publisher URL from a Google News article id, if present."""
+        try:
+            padded = article_id + "=" * (-len(article_id) % 4)
+            raw = base64.urlsafe_b64decode(padded)
+        except Exception:
+            return None
+
+        # The payload is a small protobuf. Read length-delimited fields
+        # (tag 0x22 = field 4, wire type 2) properly rather than regexing
+        # for "http", which can't tell where the string ends and would drag
+        # in the next field's tag byte.
+        i = 0
+        while i < len(raw):
+            if raw[i] != 0x22:
+                i += 1
+                continue
+            i += 1
+            length, shift = 0, 0
+            while i < len(raw):
+                byte = raw[i]
+                i += 1
+                length |= (byte & 0x7F) << shift
+                if not byte & 0x80:
+                    break
+                shift += 7
+            value = raw[i:i + length]
+            i += length
+            if value.startswith((b"http://", b"https://")):
+                candidate = value.decode("utf-8", errors="ignore")
+                if "news.google.com" not in candidate:
+                    return candidate
+        return None
 
     @staticmethod
     def _parse_entry_date(entry) -> datetime:

@@ -108,6 +108,15 @@
         document.getElementById('news-count').textContent = `${filtered.length} notizia/e`;
     }
 
+    // Headlines routinely contain «», & and quotes; injected raw they can
+    // break the markup (and are an XSS vector, since the text comes from
+    // third-party feeds).
+    function escapeHtml(value) {
+        const div = document.createElement('div');
+        div.textContent = value == null ? '' : String(value);
+        return div.innerHTML;
+    }
+
     function renderNews(news) {
         const container = document.getElementById('news-list');
         const emptyState = document.getElementById('empty-state');
@@ -138,61 +147,35 @@
                 'Needs Review': 'badge-warning'
             };
 
-            return `
-                <div style="
-                    border: 1px solid #ecf0f1;
-                    border-radius: 8px;
-                    padding: 20px;
-                    margin-bottom: 15px;
-                    background: white;
-                ">
-                    <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 15px;">
-                        <div style="flex: 1;">
-                            <h4 style="margin: 0 0 10px 0; color: #2c3e50;">${n.title}</h4>
-                            <p style="margin: 5px 0; color: #7f8c8d; font-size: 14px;">
-                                <strong>Azienda:</strong> ${n.company_name}
-                            </p>
-                            <p style="margin: 5px 0; color: #7f8c8d; font-size: 14px;">
-                                <strong>Fonte:</strong> <a href="${url}" target="_blank" rel="noopener noreferrer" style="color: #3498db;">${n.source_name || 'N/D'}</a>
-                                ${publishedDate ? ` &middot; ${publishedDate}` : ''}
-                            </p>
-                            ${n.summary ? `<p style="margin: 8px 0 0 0; color: #555; font-size: 14px;">${n.summary}</p>` : ''}
-                        </div>
-                        <span class="badge ${statusBadges[n.status] || 'badge-primary'}" style="white-space: nowrap; margin-left: 10px;">
-                            ${n.status}
-                        </span>
-                    </div>
+            const statusLabels = {
+                'New': 'Nuova', 'Approved': 'Approvata',
+                'Rejected': 'Rifiutata', 'Needs Review': 'Da verificare'
+            };
 
-                    <div style="display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap;">
-                        <span class="badge badge-primary">Categoria: ${category}</span>
-                        <span style="
-                            padding: 4px 8px;
-                            border-radius: 3px;
-                            font-size: 12px;
-                            font-weight: 600;
-                            background: rgba(52, 152, 219, 0.1);
-                            color: ${relevanceColor};
-                        ">
-                            Rilevanza: ${score.toFixed(1)}/10
-                        </span>
+            return `
+                <article class="news-card">
+                    <h4 class="news-card__title">${escapeHtml(n.title)}</h4>
+                    <p class="news-card__meta">
+                        <strong>${escapeHtml(n.company_name)}</strong>
+                        &middot; <a href="${url}" target="_blank" rel="noopener noreferrer">${escapeHtml(n.source_name || 'N/D')}</a>
+                        ${publishedDate ? `&middot; ${publishedDate}` : ''}
+                    </p>
+                    ${n.summary ? `<p class="news-card__summary">${escapeHtml(n.summary)}</p>` : ''}
+
+                    <div class="news-card__tags">
+                        <span class="badge ${statusBadges[n.status] || 'badge-primary'}">${statusLabels[n.status] || n.status}</span>
+                        <span class="badge badge-primary">${escapeHtml(category)}</span>
+                        <span class="news-card__score" style="color: ${relevanceColor};">Rilevanza ${score.toFixed(1)}/10</span>
                         ${n.confidence_score === 1 ? '<span class="badge badge-warning">Non classificata dall\'AI</span>' : ''}
                     </div>
 
-                    <div style="display: flex; gap: 10px; justify-content: flex-end;">
-                        <button type="button" class="btn btn-sm btn-primary" onclick="reclassifyNews(${n.id})">
-                            ↻ Riclassifica
-                        </button>
-                        <button type="button" class="btn btn-sm btn-success" onclick="approveNews(${n.id})">
-                            ✓ Approva
-                        </button>
-                        <button type="button" class="btn btn-sm btn-danger" onclick="rejectNews(${n.id})">
-                            ✗ Rifiuta
-                        </button>
-                        <a href="${url}" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-primary">
-                            → Leggi
-                        </a>
+                    <div class="news-card__actions">
+                        <button type="button" class="btn btn-sm btn-primary" onclick="reclassifyNews(${n.id})">↻ Riclassifica</button>
+                        <button type="button" class="btn btn-sm btn-success" onclick="approveNews(${n.id})">✓ Approva</button>
+                        <button type="button" class="btn btn-sm btn-danger" onclick="rejectNews(${n.id})">✗ Rifiuta</button>
+                        <a href="${url}" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-primary">→ Leggi</a>
                     </div>
-                </div>
+                </article>
             `;
         }).join('');
     }
