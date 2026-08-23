@@ -4,6 +4,32 @@ Tutte le modifiche rilevanti a questo progetto sono documentate in questo file.
 Il formato segue [Keep a Changelog](https://keepachangelog.com/) e il progetto
 usa [Semantic Versioning](https://semver.org/lang/it/).
 
+## [0.8.0] - 2026-08-23
+
+### Added
+- **Cambia azienda su una notizia** (🏢, `PUT /api/news/{id}/company`): la
+  ricerca associa per nome, quindi un titolo su BPER puo' arrivare sotto
+  Banca Sella. Invece di doverla solo rifiutare, ora la sposti sull'azienda
+  giusta; la notizia torna in "Da verificare" perche' i punteggi erano
+  calcolati sull'azienda sbagliata.
+- **Azioni massive nella pagina Notizie**: checkbox su ogni notizia,
+  "seleziona tutte le visibili", e approva / rifiuta / elimina in blocco
+  (`POST /api/news/bulk-status`, `DELETE /api/news`).
+- **"Elimina tutte le rifiutate"** per ripulire in un colpo solo le notizie
+  gia' scartate.
+
+### Fixed
+- **Il sommario mostrava HTML grezzo** (`<a href="https://news.google.com/rss/
+  articles/CBMi...`): Google News mette markup, non testo, nel campo
+  description. Ora i tag vengono rimossi e, se il testo ripete solo il
+  titolo, il sommario viene omesso. "🔗 Correggi link notizie" ripulisce
+  anche i sommari gia' salvati.
+
+### Verificato
+- Le aziende in **Pausa** o **Archiviata** non vengono cercate dal
+  monitoraggio (il comportamento era gia' corretto, ora c'e' una verifica
+  esplicita).
+
 ## [0.7.2] - 2026-08-23
 
 ### Fixed

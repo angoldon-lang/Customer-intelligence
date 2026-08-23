@@ -1,6 +1,6 @@
 """FastAPI application entry point."""
 
-from fastapi import FastAPI, UploadFile, File, Depends, HTTPException, Request
+from fastapi import FastAPI, UploadFile, File, Depends, HTTPException, Request, Body
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -538,6 +538,82 @@ def list_news(
     }
 
 
+@app.put("/api/news/{news_id}/company")
+def reassign_news_company(news_id: int, company_id: int, db: Session = Depends(get_db)):
+    """
+    Move a news item to a different company.
+
+    Searches match on company name, so a headline about a peer ("BPER
+    Banca...") can legitimately come back under another bank. Rather than
+    just rejecting it, reassign it to the company it really concerns.
+    """
+    news = db.query(NewsItem).filter_by(id=news_id).first()
+    if not news:
+        raise HTTPException(status_code=404, detail="News item not found")
+
+    company = db.query(Company).filter_by(id=company_id).first()
+    if not company:
+        raise HTTPException(status_code=404, detail="Company not found")
+
+    news.company_id = company.id
+    # The scores were computed against the old company, so they no longer
+    # mean anything - flag it for a fresh classification.
+    news.status = "Needs Review"
+    news.confidence_score = 1
+    db.commit()
+
+    return {
+        "id": news.id,
+        "company_name": company.company_name,
+        "message": f"Notizia riassegnata a {company.company_name}",
+    }
+
+
+@app.post("/api/news/bulk-status")
+def bulk_update_news_status(payload: dict = Body(...), db: Session = Depends(get_db)):
+    """Approve/reject many news items at once. Body: {ids: [...], status: "..."}"""
+    ids = payload.get("ids") or []
+    status = payload.get("status")
+
+    valid = ["New", "Approved", "Rejected", "Duplicate", "Needs Review", "Sent"]
+    if status not in valid:
+        raise HTTPException(status_code=400, detail=f"Stato non valido, usa uno tra {valid}")
+    if not ids:
+        raise HTTPException(status_code=400, detail="Nessuna notizia selezionata")
+
+    updated = (
+        db.query(NewsItem)
+        .filter(NewsItem.id.in_(ids))
+        .update({NewsItem.status: status}, synchronize_session=False)
+    )
+    db.commit()
+    return {"updated": updated, "status": status, "message": f"{updated} notizie aggiornate"}
+
+
+@app.delete("/api/news")
+def delete_news(status: str = None, ids: str = None, db: Session = Depends(get_db)):
+    """
+    Delete news items permanently.
+
+    Pass status=Rejected to clear out everything already rejected, or a
+    comma-separated `ids` list to remove specific items.
+    """
+    query = db.query(NewsItem)
+    if ids:
+        id_list = [int(i) for i in ids.split(",") if i.strip().isdigit()]
+        if not id_list:
+            raise HTTPException(status_code=400, detail="Nessun id valido")
+        query = query.filter(NewsItem.id.in_(id_list))
+    elif status:
+        query = query.filter_by(status=status)
+    else:
+        raise HTTPException(status_code=400, detail="Specifica status oppure ids")
+
+    deleted = query.delete(synchronize_session=False)
+    db.commit()
+    return {"deleted": deleted, "message": f"{deleted} notizie eliminate"}
+
+
 @app.post("/api/news/{news_id}/reclassify")
 def reclassify_news(news_id: int, db: Session = Depends(get_db)):
     """
@@ -875,11 +951,15 @@ def fix_news_urls(db: Session = Depends(get_db)):
     """
     from app.providers.google_news_rss import GoogleNewsRSSProvider
 
+    # Two independent repairs: a Google News link to decode, and/or a
+    # summary still holding raw <description> markup. A row can need either,
+    # so don't gate the summary fix behind the URL filter.
     affected = db.query(NewsItem).filter(
-        NewsItem.url.like("%news.google.com%")
+        NewsItem.url.like("%news.google.com%") | NewsItem.summary.like("%<%")
     ).all()
 
     fixed = 0
+    cleaned = 0
     for item in affected:
         # Pass the title so undecodable (newer) ids can still fall back to a
         # search on the headline instead of staying on a dead feed link.
@@ -887,9 +967,18 @@ def fix_news_urls(db: Session = Depends(get_db)):
         if new_url and new_url != item.url:
             item.url = new_url
             fixed += 1
+        # Older rows stored the raw <description> markup as the summary.
+        clean = GoogleNewsRSSProvider.clean_summary(item.summary, item.title)
+        if clean != item.summary:
+            item.summary = clean
+            cleaned += 1
     db.commit()
 
-    return {"fixed": fixed, "message": f"{fixed} link corretti su {len(affected)} controllati"}
+    return {
+        "fixed": fixed,
+        "cleaned_summaries": cleaned,
+        "message": f"{fixed} link corretti, {cleaned} sommari ripuliti (su {len(affected)} notizie)",
+    }
 
 
 @app.post("/api/admin/reset")

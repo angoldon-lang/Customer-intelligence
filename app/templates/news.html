@@ -56,10 +56,55 @@
         <span id="news-count" style="font-size: 14px; color: #7f8c8d;">Caricamento...</span>
     </div>
 
+    <div id="bulk-bar" style="display:none; align-items:center; gap:10px; flex-wrap:wrap; padding:12px; background:#eef5fd; border-radius:4px; margin-bottom:15px;">
+        <strong id="bulk-count">0 selezionate</strong>
+        <button type="button" class="btn btn-sm btn-success" onclick="bulkStatus('Approved')">✓ Approva selezionate</button>
+        <button type="button" class="btn btn-sm btn-danger" onclick="bulkStatus('Rejected')">✗ Rifiuta selezionate</button>
+        <button type="button" class="btn btn-sm btn-danger" onclick="bulkDelete()">🗑️ Elimina selezionate</button>
+        <button type="button" class="btn btn-sm btn-primary" onclick="clearSelection()">Deseleziona</button>
+    </div>
+
+    <div style="display:flex; align-items:center; gap:10px; margin-bottom:12px;">
+        <label style="font-size:13px; color:#7f8c8d;">
+            <input type="checkbox" id="select-all" onchange="toggleSelectAll(this.checked)"> Seleziona tutte le notizie visibili
+        </label>
+        <button type="button" class="btn btn-sm btn-danger" onclick="deleteRejected()" style="margin-left:auto;">
+            🗑️ Elimina tutte le rifiutate
+        </button>
+    </div>
+
     <div id="news-list"></div>
 
     <div id="empty-state" style="display: none; padding: 40px 20px; text-align: center; color: #7f8c8d;">
         <p>Nessuna notizia trovata. Avvia il monitoraggio per cercare notizie!</p>
+    </div>
+</div>
+
+<!-- Modal: riassegna notizia ad un'altra azienda -->
+<div id="reassign-modal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2>Cambia azienda</h2>
+            <button class="modal-close" onclick="closeReassign()">✕</button>
+        </div>
+        <p style="color:#7f8c8d; font-size:14px;">
+            La ricerca associa le notizie per nome, quindi un titolo su un'altra
+            banca/azienda può finire sotto il cliente sbagliato. Qui la sposti
+            sull'azienda giusta.
+        </p>
+        <p id="reassign-title" style="font-weight:600; margin:12px 0;"></p>
+        <div class="form-group">
+            <label>Cerca azienda</label>
+            <input type="text" id="reassign-search" placeholder="Digita per filtrare..." oninput="filterReassign()">
+        </div>
+        <div class="form-group">
+            <label>Azienda corretta</label>
+            <select id="reassign-select" size="8" style="width:100%;"></select>
+        </div>
+        <div style="display:flex; gap:10px; justify-content:flex-end;">
+            <button type="button" class="btn btn-danger btn-sm" onclick="closeReassign()">Annulla</button>
+            <button type="button" class="btn btn-success btn-sm" onclick="confirmReassign()">Sposta notizia</button>
+        </div>
     </div>
 </div>
 
@@ -105,6 +150,7 @@
         });
 
         renderNews(filtered);
+        updateSelection();
         document.getElementById('news-count').textContent = `${filtered.length} notizia/e`;
     }
 
@@ -154,7 +200,11 @@
 
             return `
                 <article class="news-card">
-                    <h4 class="news-card__title">${escapeHtml(n.title)}</h4>
+                    <h4 class="news-card__title">
+                        <input type="checkbox" class="news-select" value="${n.id}" onchange="updateSelection()"
+                               ${selectedIds.has(n.id) ? 'checked' : ''} style="margin-right:8px;">
+                        ${escapeHtml(n.title)}
+                    </h4>
                     <p class="news-card__meta">
                         <strong>${escapeHtml(n.company_name)}</strong>
                         &middot; <a href="${url}" target="_blank" rel="noopener noreferrer">${escapeHtml(n.source_name || 'N/D')}</a>
@@ -170,6 +220,7 @@
                     </div>
 
                     <div class="news-card__actions">
+                        <button type="button" class="btn btn-sm btn-primary" onclick="openReassign(${n.id})">🏢 Cambia azienda</button>
                         <button type="button" class="btn btn-sm btn-primary" onclick="reclassifyNews(${n.id})">↻ Riclassifica</button>
                         <button type="button" class="btn btn-sm btn-success" onclick="approveNews(${n.id})">✓ Approva</button>
                         <button type="button" class="btn btn-sm btn-danger" onclick="rejectNews(${n.id})">✗ Rifiuta</button>
@@ -191,6 +242,127 @@
                 const err = await response.json();
                 alert('Errore: ' + (err.detail || 'impossibile aggiornare la notizia'));
             }
+        } catch (error) {
+            alert('Errore: ' + error.message);
+        }
+    }
+
+    // ---- Selezione multipla -------------------------------------------
+    const selectedIds = new Set();
+
+    function updateSelection() {
+        selectedIds.clear();
+        document.querySelectorAll('.news-select:checked').forEach(cb => selectedIds.add(Number(cb.value)));
+
+        const bar = document.getElementById('bulk-bar');
+        bar.style.display = selectedIds.size ? 'flex' : 'none';
+        document.getElementById('bulk-count').textContent = `${selectedIds.size} selezionate`;
+    }
+
+    function toggleSelectAll(checked) {
+        document.querySelectorAll('.news-select').forEach(cb => { cb.checked = checked; });
+        updateSelection();
+    }
+
+    function clearSelection() {
+        document.getElementById('select-all').checked = false;
+        toggleSelectAll(false);
+    }
+
+    async function bulkStatus(status) {
+        const ids = [...selectedIds];
+        if (!ids.length) return;
+        const label = status === 'Approved' ? 'approvare' : 'rifiutare';
+        if (!confirm(`Vuoi ${label} ${ids.length} notizie?`)) return;
+
+        try {
+            const response = await fetch('/api/news/bulk-status', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids, status })
+            });
+            const data = await response.json();
+            if (!response.ok) return alert('Errore: ' + (data.detail || 'operazione fallita'));
+            clearSelection();
+            loadNews();
+        } catch (error) {
+            alert('Errore: ' + error.message);
+        }
+    }
+
+    async function bulkDelete() {
+        const ids = [...selectedIds];
+        if (!ids.length) return;
+        if (!confirm(`Eliminare definitivamente ${ids.length} notizie?`)) return;
+        await deleteNews(`ids=${ids.join(',')}`);
+        clearSelection();
+    }
+
+    async function deleteRejected() {
+        if (!confirm('Eliminare definitivamente TUTTE le notizie rifiutate?')) return;
+        await deleteNews('status=Rejected');
+    }
+
+    async function deleteNews(query) {
+        try {
+            const response = await fetch(`/api/news?${query}`, { method: 'DELETE' });
+            const data = await response.json();
+            if (!response.ok) return alert('Errore: ' + (data.detail || 'eliminazione fallita'));
+            alert(data.message);
+            loadNews();
+        } catch (error) {
+            alert('Errore: ' + error.message);
+        }
+    }
+
+    // ---- Riassegnazione azienda ---------------------------------------
+    let reassignNewsId = null;
+    let companiesCache = [];
+
+    async function openReassign(newsId) {
+        reassignNewsId = newsId;
+        const item = allNews.find(n => n.id === newsId);
+        document.getElementById('reassign-title').textContent = item ? item.title : '';
+        document.getElementById('reassign-search').value = '';
+        document.getElementById('reassign-modal').classList.add('active');
+
+        if (!companiesCache.length) {
+            try {
+                const response = await fetch('/api/companies');
+                const data = await response.json();
+                companiesCache = data.companies || [];
+            } catch (error) {
+                console.error('Error loading companies:', error);
+            }
+        }
+        renderReassignOptions(companiesCache);
+    }
+
+    function renderReassignOptions(list) {
+        document.getElementById('reassign-select').innerHTML =
+            list.map(c => `<option value="${c.id}">${escapeHtml(c.company_name)}</option>`).join('');
+    }
+
+    function filterReassign() {
+        const q = document.getElementById('reassign-search').value.toLowerCase();
+        renderReassignOptions(companiesCache.filter(c => c.company_name.toLowerCase().includes(q)));
+    }
+
+    function closeReassign() {
+        document.getElementById('reassign-modal').classList.remove('active');
+        reassignNewsId = null;
+    }
+
+    async function confirmReassign() {
+        const companyId = document.getElementById('reassign-select').value;
+        if (!companyId || !reassignNewsId) return;
+
+        try {
+            const response = await fetch(`/api/news/${reassignNewsId}/company?company_id=${companyId}`, { method: 'PUT' });
+            const data = await response.json();
+            if (!response.ok) return alert('Errore: ' + (data.detail || 'spostamento fallito'));
+            closeReassign();
+            loadNews();
         } catch (error) {
             alert('Errore: ' + error.message);
         }

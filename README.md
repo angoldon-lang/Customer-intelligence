@@ -188,6 +188,13 @@ La dashboard è completamente funzionante con **8 pagine principali**:
 - Approva/rifiuta notizie
 - **Riclassifica** una notizia con l'AI (↻): utile per le notizie salvate
   quando Claude non era raggiungibile
+- **Cambia azienda** (🏢): la ricerca associa per nome, quindi una notizia su
+  un'altra societa' puo' finire sotto il cliente sbagliato - qui la sposti
+  sull'azienda giusta (viene rimessa in "Da verificare" per la riclassifica)
+- **Selezione multipla**: approva, rifiuta o elimina piu' notizie insieme,
+  piu' "Elimina tutte le rifiutate" per fare pulizia
+- Le aziende in stato **Pausa** (o Archiviata) non vengono cercate: solo
+  quelle "Attiva" entrano nel monitoraggio
 - Link diretto all'articolo
 
 ### 📧 Report email

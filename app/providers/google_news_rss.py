@@ -10,6 +10,7 @@ index larger outlets.
 from typing import List, Dict, Any
 from datetime import datetime
 from urllib.parse import quote_plus
+from html import unescape
 import base64
 import re
 import time
@@ -130,12 +131,37 @@ class GoogleNewsRSSProvider(NewsSourceProvider):
                 source_name=source_name,
                 source_type="google_news_rss",
                 published_date=self._parse_entry_date(entry),
-                summary=entry.get("summary"),
+                summary=self.clean_summary(entry.get("summary"), title),
                 access_status="available",
                 license_scope="summary_allowed",
             ))
 
         return results
+
+    @staticmethod
+    def clean_summary(summary: str, title: str = None) -> str:
+        """
+        Google News puts markup, not prose, in <description>: typically just
+        an <a> wrapping the headline plus the publisher name. Rendered raw it
+        shows as literal HTML in the card, and it adds nothing over the title,
+        so strip the tags and drop it when it merely repeats the headline.
+        """
+        if not summary:
+            return None
+
+        text = re.sub(r"<[^>]+>", " ", summary)
+        text = unescape(text)
+        text = re.sub(r"\s+", " ", text).strip()
+
+        if not text:
+            return None
+
+        def key(value: str) -> str:
+            return re.sub(r"\W+", "", (value or "")).lower()
+
+        if title and key(text)[:60] == key(title)[:60]:
+            return None
+        return text
 
     @staticmethod
     def normalize_article_url(url: str, title: str = None) -> str:
