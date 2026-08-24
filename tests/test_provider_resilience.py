@@ -40,6 +40,11 @@ def provider(no_sleep):
     return GoogleNewsRSSProvider()
 
 
+def backoff_waits(slept):
+    """Drop the inter-request throttle pauses, keep the retry backoffs."""
+    return [s for s in slept if s > google_news_rss.MIN_REQUEST_INTERVAL]
+
+
 def fake_get(responses):
     """Serve the given responses in order, then repeat the last one."""
     calls = {"n": 0}
@@ -83,6 +88,56 @@ def test_a_single_failing_company_does_not_pause_the_provider(provider, monkeypa
     assert provider.blocked is False, "one bad company must not stop the run"
 
 
+def test_ladder_shortens_once_google_is_clearly_throttling(provider, monkeypatch, no_sleep):
+    """
+    Retrying every company for a minute during a 503 storm only delays the
+    pause. The first company gets the full ladder, the next ones don't.
+    """
+    monkeypatch.setattr(google_news_rss.requests, "get", fake_get([FakeResponse(503)]))
+
+    provider.search_company_news("Prima azienda")
+    assert backoff_waits(no_sleep) == google_news_rss.RETRY_BACKOFF
+
+    no_sleep.clear()
+    provider.search_company_news("Seconda azienda")
+    assert backoff_waits(no_sleep) == google_news_rss.SATURATED_BACKOFF
+
+
+def test_cooldown_grows_while_the_block_persists(provider, monkeypatch, no_sleep):
+    """A sustained block must not re-probe every 3 minutes for the whole run."""
+    monkeypatch.setattr(google_news_rss.requests, "get", fake_get([FakeResponse(503)]))
+
+    def fail_enough_to_pause():
+        # One extra call: the first reopens the circuit after the cooldown,
+        # the rest fail again and re-trip it.
+        for _ in range(google_news_rss.MAX_CONSECUTIVE_FAILURES + 1):
+            provider.search_company_news("Azienda")
+
+    fail_enough_to_pause()
+    assert provider.blocked
+    first = provider._cooldown
+    assert first == google_news_rss.COOLDOWN_SECONDS
+
+    provider._blocked_until = 0  # cooldown elapsed, but still blocked
+    fail_enough_to_pause()
+
+    assert provider.blocked
+    assert provider._cooldown > first
+
+
+def test_a_successful_search_resets_the_cooldown_ladder(provider, monkeypatch, no_sleep):
+    monkeypatch.setattr(google_news_rss.requests, "get", fake_get([FakeResponse(503)]))
+    while not provider.blocked:
+        provider.search_company_news("Azienda")
+    provider._blocked_until = 0
+
+    monkeypatch.setattr(google_news_rss.requests, "get", fake_get([FakeResponse(200, FEED)]))
+    provider.search_company_news("Azienda che funziona")
+
+    assert provider._cooldown == google_news_rss.COOLDOWN_SECONDS
+    assert provider._pauses == 0
+
+
 def test_provider_pauses_only_after_repeated_failures(provider, monkeypatch):
     get = fake_get([FakeResponse(503)])
     monkeypatch.setattr(google_news_rss.requests, "get", get)
@@ -124,6 +179,30 @@ def test_success_resets_the_failure_counter(provider, monkeypatch):
     monkeypatch.setattr(google_news_rss.requests, "get", fake_get([FakeResponse(200, FEED)]))
     provider.search_company_news("Azienda Due")
     assert provider._consecutive_failures == 0
+
+
+def test_connection_errors_get_one_quick_retry_not_the_full_ladder(provider, monkeypatch, no_sleep):
+    """No network means every company would fail: don't burn 60s on each."""
+    def raising_get(url, params=None, timeout=None, headers=None):
+        raise google_news_rss.requests.ConnectionError("proxy unreachable")
+
+    monkeypatch.setattr(google_news_rss.requests, "get", raising_get)
+
+    provider.search_company_news("Azienda")
+
+    assert backoff_waits(no_sleep) == google_news_rss.CONNECTION_RETRY_BACKOFF
+
+
+def test_timeouts_still_use_the_full_backoff_ladder(provider, monkeypatch, no_sleep):
+    """A timeout can be transient, so it's worth the longer ladder."""
+    def raising_get(url, params=None, timeout=None, headers=None):
+        raise google_news_rss.requests.Timeout("read timed out")
+
+    monkeypatch.setattr(google_news_rss.requests, "get", raising_get)
+
+    provider.search_company_news("Azienda")
+
+    assert backoff_waits(no_sleep) == google_news_rss.RETRY_BACKOFF
 
 
 def test_403_is_not_retried(provider, monkeypatch, no_sleep):

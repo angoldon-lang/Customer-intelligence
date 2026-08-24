@@ -4,6 +4,37 @@ Tutte le modifiche rilevanti a questo progetto sono documentate in questo file.
 Il formato segue [Keep a Changelog](https://keepachangelog.com/) e il progetto
 usa [Semantic Versioning](https://semver.org/lang/it/).
 
+## [0.9.1] - 2026-08-23
+
+### Fixed
+- **"database is locked" salvando dalla dashboard durante un monitoraggio**
+  (destinatari, cluster, impostazioni). Il run scriveva tutto in un'unica
+  transazione aperta dall'inizio alla fine: su un'anagrafica grande sono
+  decine di minuti in cui SQLite blocca qualsiasi altra scrittura. Tre
+  correzioni:
+  - **commit per azienda** invece di uno solo a fine run, e **commit per
+    notizia** invece di un flush: prima il lock restava preso anche durante
+    ogni chiamata di classificazione a Claude;
+  - **journal WAL** attivo, cosi' la dashboard continua a leggere mentre il
+    monitoraggio scrive;
+  - **busy timeout a 30s** (il default e' 5s): una scrittura concorrente
+    aspetta il suo turno invece di fallire subito.
+- **Rete assente: 60s persi per ogni azienda.** Un errore di connessione
+  (DNS/proxy/offline) ora ha un solo retry rapido invece della scala
+  completa 5s/15s/40s, che resta per timeout ed errori HTTP temporanei.
+- **Retry inutili durante un blocco di Google News.** Se anche l'azienda
+  precedente ha fallito, Google sta limitando sistematicamente e ritentare
+  ogni azienda per un minuto ritarda soltanto la pausa: la prima azienda usa
+  la scala completa, le successive un solo tentativo rapido. La pausa inoltre
+  **raddoppia** a ogni blocco consecutivo (180s, 360s, ... fino a 30 minuti)
+  invece di riprovare ogni 3 minuti per tutto il run, e si riazzera appena
+  una ricerca va a buon fine.
+- **`[GNews] Quota/auth error (403)` era fuorviante**: un 403/401 e' la
+  chiave `GNEWS_API_KEY` non valida, non la quota esaurita (che e' il 429).
+  Ora il log dice quale dei due e'.
+- **Invio report senza destinatari**: rispondeva `400 Bad Request` senza
+  spiegazione. Ora il messaggio dice quale cluster e dove aggiungerli.
+
 ## [0.9.0] - 2026-08-23
 
 ### Added

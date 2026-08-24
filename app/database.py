@@ -7,7 +7,18 @@ from app.config import settings
 # Create engine
 engine = create_engine(
     settings.DATABASE_URL,
-    connect_args={"check_same_thread": False} if "sqlite" in settings.DATABASE_URL else {},
+    connect_args=(
+        {
+            "check_same_thread": False,
+            # Wait for a busy database instead of failing instantly with
+            # "database is locked". The monitoring run writes from a
+            # background thread while the dashboard is being used; the
+            # default 5s is not enough to ride out a slow commit.
+            "timeout": 30,
+        }
+        if "sqlite" in settings.DATABASE_URL
+        else {}
+    ),
     echo=settings.DEBUG,
 )
 
@@ -17,6 +28,15 @@ if "sqlite" in settings.DATABASE_URL:
     def set_sqlite_pragma(dbapi_conn, connection_record):
         cursor = dbapi_conn.cursor()
         cursor.execute("PRAGMA foreign_keys=ON")
+        # WAL lets the dashboard keep reading (and queue its writes) while
+        # the monitoring run writes. In the default rollback-journal mode a
+        # single writer blocks everyone, which is what surfaced as
+        # "database is locked" when saving a recipient during a run.
+        try:
+            cursor.execute("PRAGMA journal_mode=WAL")
+        except Exception as e:  # e.g. a DB on a network share
+            print(f"[DB] WAL non attivabile ({e}), uso il journal di default")
+        cursor.execute("PRAGMA busy_timeout=30000")
         cursor.close()
 
 # Session factory

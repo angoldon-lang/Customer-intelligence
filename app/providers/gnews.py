@@ -43,7 +43,14 @@ class GNewsProvider(NewsSourceProvider):
             response = requests.get(GNEWS_ENDPOINT, params=params, timeout=self.timeout)
             if response.status_code in (401, 403, 429):
                 self.quota_exceeded = True
-                print(f"[GNews] Quota/auth error ({response.status_code}), disabling for this run")
+                # 401/403 is the key, 429 is the daily quota - saying
+                # "quota" for all three sent people looking in the wrong
+                # place when the real problem was GNEWS_API_KEY.
+                if response.status_code == 429:
+                    reason = "quota giornaliera esaurita"
+                else:
+                    reason = f"chiave GNEWS_API_KEY non valida o non autorizzata (HTTP {response.status_code})"
+                print(f"[GNews] {reason}: disattivato per questo run")
                 self.last_call_error = f"HTTP {response.status_code}"
                 return []
             response.raise_for_status()

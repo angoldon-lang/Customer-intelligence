@@ -1102,9 +1102,16 @@ def send_report(
         raise HTTPException(status_code=404, detail="Report not found")
 
     # Get cluster recipients
-    recipients = [r.email for r in report.cluster.recipients if r.email]
+    recipients = [r.email for r in report.cluster.recipients if r.email and r.active]
     if not recipients:
-        raise HTTPException(status_code=400, detail="No recipients configured for this cluster")
+        cluster_name = report.cluster.cluster_name if report.cluster else "?"
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Nessun destinatario configurato per il cluster '{cluster_name}'. "
+                f"Aggiungine uno dalla pagina Cluster > Dettagli."
+            ),
+        )
 
     # Send email
     sender = EmailSender(db)

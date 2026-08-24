@@ -32,11 +32,23 @@ MIN_REQUEST_INTERVAL = 2.5  # seconds between requests
 RETRY_STATUSES = {429, 500, 502, 503, 504}
 RETRY_BACKOFF = [5, 15, 40]  # seconds before each retry
 
+# A connection error (no network, DNS, proxy) won't clear in 40s and would
+# apply to every company, so it gets one quick retry instead of the full
+# ladder; the consecutive-failure breaker then pauses the provider.
+CONNECTION_RETRY_BACKOFF = [3]
+
+# Used once the previous company already failed: Google is throttling us,
+# not hiccuping, so one short retry then move on to the pause.
+SATURATED_BACKOFF = [5]
+
 # After this many consecutive failed companies the provider pauses (it is
 # clearly not working right now), then reopens automatically so a temporary
 # block doesn't skip every remaining company in the run.
 MAX_CONSECUTIVE_FAILURES = 4
 COOLDOWN_SECONDS = 180
+# If it's still blocked after a pause, wait longer each time instead of
+# retrying every 3 minutes for the whole run.
+MAX_COOLDOWN_SECONDS = 1800
 
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
 
@@ -50,6 +62,8 @@ class GoogleNewsRSSProvider(NewsSourceProvider):
         self._last_request_at = 0.0
         self.blocked = False
         self._blocked_until = 0.0
+        self._cooldown = COOLDOWN_SECONDS
+        self._pauses = 0
         self._consecutive_failures = 0
         self.last_call_error = None
         self._skip_notice_shown = False
@@ -72,11 +86,13 @@ class GoogleNewsRSSProvider(NewsSourceProvider):
         self._consecutive_failures += 1
         if self._consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
             self.blocked = True
-            self._blocked_until = time.monotonic() + COOLDOWN_SECONDS
+            self._cooldown = min(self._cooldown * 2, MAX_COOLDOWN_SECONDS) if self._pauses else COOLDOWN_SECONDS
+            self._pauses += 1
+            self._blocked_until = time.monotonic() + self._cooldown
             self._skip_notice_shown = False
             print(
                 f"[GoogleNewsRSS] {reason}: {self._consecutive_failures} fallimenti consecutivi, "
-                f"pausa di {COOLDOWN_SECONDS}s poi riprova automaticamente"
+                f"pausa di {self._cooldown}s poi riprova automaticamente"
             )
         else:
             print(
@@ -104,7 +120,13 @@ class GoogleNewsRSSProvider(NewsSourceProvider):
         Returns the response, or None if every attempt failed (the reason is
         left in self.last_call_error).
         """
-        attempts = len(RETRY_BACKOFF) + 1
+        # The full ladder is worth it when the provider is otherwise
+        # healthy: one company hit a blip. Once the previous company has
+        # already failed, Google is throttling us systematically and
+        # retrying each company for a minute only delays the pause, so
+        # shorten the ladder to a single quick attempt.
+        status_backoff = RETRY_BACKOFF if self._consecutive_failures == 0 else SATURATED_BACKOFF
+        attempts = len(status_backoff) + 1
 
         for attempt in range(attempts):
             self._throttle()
@@ -117,10 +139,15 @@ class GoogleNewsRSSProvider(NewsSourceProvider):
                 )
             except requests.RequestException as e:
                 self.last_call_error = "request exception"
-                if attempt == attempts - 1:
+                backoff = (
+                    CONNECTION_RETRY_BACKOFF
+                    if isinstance(e, requests.ConnectionError)
+                    else status_backoff
+                )
+                if attempt >= len(backoff):
                     print(f"[GoogleNewsRSS] Error searching '{company_name}': {e}")
                     return None
-                wait = RETRY_BACKOFF[attempt]
+                wait = backoff[attempt]
                 print(f"[GoogleNewsRSS] '{company_name}': {type(e).__name__}, riprovo tra {wait}s")
                 time.sleep(wait)
                 continue
@@ -134,7 +161,7 @@ class GoogleNewsRSSProvider(NewsSourceProvider):
                     )
                     return None
                 # Honour Retry-After when Google sends one.
-                wait = RETRY_BACKOFF[attempt]
+                wait = status_backoff[attempt]
                 retry_after = response.headers.get("Retry-After")
                 if retry_after and retry_after.isdigit():
                     wait = max(wait, min(int(retry_after), 120))
@@ -215,7 +242,11 @@ class GoogleNewsRSSProvider(NewsSourceProvider):
             self.last_call_error = "malformed RSS response"
             return []
 
+        # A clean search means the provider recovered: start the pause
+        # ladder from scratch if it gets blocked again later on.
         self._consecutive_failures = 0
+        self._cooldown = COOLDOWN_SECONDS
+        self._pauses = 0
         results = []
 
         for entry in parsed.entries:

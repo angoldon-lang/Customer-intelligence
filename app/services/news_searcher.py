@@ -237,7 +237,12 @@ class NewsSearcher:
 
             db.add(news_item)
             try:
-                db.flush()
+                # Commit each article instead of flushing and committing at
+                # the end: a flush takes the SQLite write lock, and the next
+                # article's classification is a network call to Claude, so
+                # the lock would be held across every API round-trip and the
+                # dashboard would fail with "database is locked".
+                db.commit()
             except Exception as e:
                 # url is unique - a race/dup slipped past the check above
                 db.rollback()
@@ -245,9 +250,6 @@ class NewsSearcher:
                 continue
 
             saved_items.append(news_item)
-
-        if saved_items:
-            db.commit()
 
         return saved_items
 
@@ -287,6 +289,7 @@ class NewsSearcher:
                     articles_found=0,
                     providers_detail="no website/tax code on file",
                 ))
+                db.commit()
                 continue
 
             try:
@@ -321,7 +324,16 @@ class NewsSearcher:
                     company.last_monitored_at = datetime.utcnow()
                     db.add(company)
 
+                # Commit per company, not once at the end of the run. A run
+                # over the full company list takes many minutes (providers
+                # are throttled on purpose), and holding the write
+                # transaction open for all of it locked out every write from
+                # the dashboard: "database is locked" when saving a
+                # recipient, a cluster or a setting mid-run.
+                db.commit()
+
             except Exception as e:
+                db.rollback()
                 result["errors"].append(f"{company.company_name}: {str(e)}")
                 db.add(SearchLog(
                     company_id=company.id,
@@ -329,6 +341,7 @@ class NewsSearcher:
                     articles_found=0,
                     error_message=str(e),
                 ))
+                db.commit()
 
         db.commit()
         result["classification_disabled_reason"] = self.classifier.disabled_reason
