@@ -516,6 +516,8 @@
             <h1>{% block page_title %}Dashboard{% endblock %}</h1>
             <div class="header-right">
                 <span class="health-badge ok" id="health-status">✓ Sistema OK</span>
+                <span id="current-user" style="margin-left: 12px; color: #7f8c8d; font-size: 13px;"></span>
+                <a href="/logout" id="logout-link" style="margin-left: 12px; font-size: 13px; color: #e74c3c; text-decoration: none; display: none;">Esci</a>
             </div>
         </div>
 
@@ -525,6 +527,31 @@
     </div>
 
     <script>
+        // A session that expires while the page is open would otherwise
+        // turn every action into a silent failure: send the user to the
+        // login page as soon as the server says the session is gone.
+        (function () {
+            const originalFetch = window.fetch;
+            window.fetch = async function (...args) {
+                const response = await originalFetch.apply(this, args);
+                if (response.status === 401) {
+                    window.location.href = '/login?next=' + encodeURIComponent(window.location.pathname);
+                }
+                return response;
+            };
+        })();
+
+        // Show who is logged in
+        fetch('/api/auth/me')
+            .then(r => r.json())
+            .then(d => {
+                if (d.username) {
+                    document.getElementById('current-user').textContent = '👤 ' + d.username;
+                    document.getElementById('logout-link').style.display = 'inline';
+                }
+            })
+            .catch(() => {});
+
         // Check health status
         fetch('/api/health')
             .then(r => r.json())

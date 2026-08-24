@@ -4,6 +4,40 @@ Tutte le modifiche rilevanti a questo progetto sono documentate in questo file.
 Il formato segue [Keep a Changelog](https://keepachangelog.com/) e il progetto
 usa [Semantic Versioning](https://semver.org/lang/it/).
 
+## [0.10.0] - 2026-08-24
+
+### Added
+- **Autenticazione con un amministratore.** Fino a ieri chiunque potesse
+  raggiungere la porta dell'app vedeva l'anagrafica clienti: ora ogni
+  pagina e ogni endpoint richiedono una sessione.
+  - **Primo avvio**: l'app apre `/setup` e chiede di creare l'utente. Non
+    esiste una password predefinita, quindi non c'e' nessuna finestra in
+    cui la dashboard e' raggiungibile con credenziali note; una volta
+    creato l'amministratore la pagina di setup si chiude per sempre.
+  - **Password** salvata solo come hash PBKDF2-SHA256 con salt per
+    password (240.000 iterazioni), mai in chiaro e mai nel `.env`.
+    Minimo 10 caratteri.
+  - **Sessione** in un cookie firmato HMAC-SHA256, `HttpOnly` e
+    `SameSite=Lax`, con scadenza (12h di default, `SESSION_TTL_HOURS`).
+    `SESSION_COOKIE_SECURE=True` per servire l'app in HTTPS.
+  - **Blocco anti-forza-bruta**: dopo 8 tentativi falliti il login resta
+    chiuso 5 minuti. Il messaggio d'errore non rivela mai se ad essere
+    sbagliato fosse l'utente o la password.
+  - **Cambio password** da Impostazioni: richiede quella attuale e
+    **disconnette tutte le altre sessioni** (il segreto di firma viene
+    rigenerato), mantenendo attiva solo quella che ha fatto la modifica.
+  - Le API rispondono `401` in JSON invece di un redirect, e la dashboard
+    riporta da sola al login quando la sessione scade.
+  - Nessuna nuova dipendenza: tutto con la libreria standard, quindi
+    aggiornare resta un semplice `git pull`.
+
+### Security
+- Le credenziali non passano dal form generico delle impostazioni e non
+  compaiono in `GET /api/settings`: si scrivono solo dagli endpoint
+  dedicati, che verificano la password attuale.
+- `?next=` dopo il login accetta solo percorsi interni, cosi' un link
+  costruito ad arte non puo' rimbalzare altrove subito dopo l'accesso.
+
 ## [0.9.1] - 2026-08-23
 
 ### Fixed

@@ -78,6 +78,15 @@ class Settings:
     # Dashboard
     DASHBOARD_ITEMS_PER_PAGE: int = int(os.getenv("DASHBOARD_ITEMS_PER_PAGE", "20"))
 
+    # Authentication (single administrator). There is no default password:
+    # on first run the app asks you to create one.
+    AUTH_ENABLED: bool = os.getenv("AUTH_ENABLED", "True").lower() == "true"
+    ADMIN_USERNAME: str = os.getenv("ADMIN_USERNAME", "admin")
+    SESSION_TTL_HOURS: int = int(os.getenv("SESSION_TTL_HOURS", "12"))
+    # Set to True when serving over HTTPS so the cookie is never sent in
+    # clear; on http://127.0.0.1 it has to stay False or login won't stick.
+    SESSION_COOKIE_SECURE: bool = os.getenv("SESSION_COOKIE_SECURE", "False").lower() == "true"
+
     @classmethod
     def get_api_key(cls) -> str:
         """Get API key for Claude, preferring CLAUDE_API_KEY."""

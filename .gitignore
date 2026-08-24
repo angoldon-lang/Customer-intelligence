@@ -34,6 +34,9 @@ MANIFEST
 
 # Database
 *.db
+# SQLite WAL sidecar files (created since the app enables journal_mode=WAL)
+*.db-wal
+*.db-shm
 *.sqlite
 *.sqlite3
 

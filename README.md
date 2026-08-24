@@ -126,6 +126,27 @@ Apri il browser:
 http://localhost:8001
 ```
 
+Al **primo avvio** l'app apre la pagina `/setup` e chiede di creare l'utente
+amministratore. Non esiste una password predefinita: finché non ne imposti
+una, nessuna pagina è raggiungibile.
+
+Dopo il primo accesso:
+
+- si entra da `/login` con le credenziali scelte;
+- la sessione dura 12 ore (`SESSION_TTL_HOURS`) ed è tenuta da un cookie
+  firmato, `HttpOnly` e `SameSite=Lax`;
+- la password si cambia da **Impostazioni > Accesso amministratore**;
+  cambiarla disconnette tutte le altre sessioni;
+- dopo 8 tentativi falliti il login resta bloccato per 5 minuti.
+
+La password è salvata solo come hash PBKDF2-SHA256 con salt, mai in chiaro
+e mai nel `.env`.
+
+Se pubblichi la dashboard **oltre `localhost`, mettila dietro HTTPS** e
+imposta `SESSION_COOKIE_SECURE=True` nel `.env`, altrimenti il cookie di
+sessione viaggia in chiaro. Per disattivare del tutto l'autenticazione
+(sconsigliato, solo per sviluppo locale) c'è `AUTH_ENABLED=False`.
+
 ## Workflow
 
 **Flusso principale di utilizzo:**

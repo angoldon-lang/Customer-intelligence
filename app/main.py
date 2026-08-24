@@ -1,7 +1,8 @@
 """FastAPI application entry point."""
 
-from fastapi import FastAPI, UploadFile, File, Depends, HTTPException, Request, Body
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi import FastAPI, UploadFile, File, Depends, HTTPException, Request, Body, Form
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from urllib.parse import quote
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
@@ -95,6 +96,75 @@ def on_shutdown():
     """Stop background jobs so the process can exit cleanly on Ctrl+C."""
     monitoring_scheduler.stop()
 
+# ============================================================================
+# Authentication (single administrator)
+# ============================================================================
+
+# Reachable without a session: the login/setup flow itself, and static
+# assets. Everything else - pages and API alike - requires one.
+PUBLIC_PATHS = {"/login", "/api/auth/login", "/favicon.ico"}
+PUBLIC_PREFIXES = ("/static/",)
+# Only reachable while no administrator exists yet.
+SETUP_PATHS = {"/setup", "/api/auth/setup"}
+
+
+def current_user(request: Request) -> str:
+    """Username of the logged-in admin, or None. Set by the middleware."""
+    return getattr(request.state, "user", None)
+
+
+@app.middleware("http")
+async def require_login(request: Request, call_next):
+    """
+    Gate every request on a valid session cookie.
+
+    Kept as a middleware rather than a per-route dependency so a route
+    added later is protected by default: forgetting a dependency would
+    silently expose it.
+    """
+    path = request.url.path
+    request.state.user = None
+
+    is_public = path in PUBLIC_PATHS or path.startswith(PUBLIC_PREFIXES)
+
+    # Static assets carry nothing private and are requested constantly:
+    # no point opening a database session to check a cookie for them.
+    if not settings.AUTH_ENABLED or path.startswith(PUBLIC_PREFIXES):
+        return await call_next(request)
+
+    from app.database import SessionLocal
+    from app.services import auth
+
+    db = SessionLocal()
+    try:
+        configured = auth.is_configured(db)
+        if configured:
+            token = request.cookies.get(auth.SESSION_COOKIE)
+            request.state.user = auth.read_session_token(token, auth.get_secret(db))
+    finally:
+        db.close()
+
+    # First run: nobody gets in until a password exists.
+    if not configured:
+        if path in SETUP_PATHS or path.startswith(PUBLIC_PREFIXES):
+            return await call_next(request)
+        return RedirectResponse("/setup", status_code=303)
+
+    # Once configured, setup is closed for good: otherwise anyone could
+    # walk in and overwrite the credentials.
+    if path in SETUP_PATHS and not request.state.user:
+        return RedirectResponse("/login", status_code=303)
+
+    if request.state.user or is_public:
+        return await call_next(request)
+
+    if path.startswith("/api/"):
+        return JSONResponse(status_code=401, content={"detail": "Sessione scaduta o assente"})
+
+    target = quote(path, safe="/") if path != "/" else ""
+    return RedirectResponse(f"/login?next={target}" if target else "/login", status_code=303)
+
+
 # Setup templates
 templates = Jinja2Templates(directory="app/templates")
 
@@ -113,18 +183,175 @@ _template_response_params = list(_inspect.signature(templates.TemplateResponse).
 _REQUEST_FIRST = bool(_template_response_params) and _template_response_params[0] == "request"
 
 
-def render(request: Request, name: str, context: dict = None) -> HTMLResponse:
+def render(
+    request: Request, name: str, context: dict = None, status_code: int = 200
+) -> HTMLResponse:
     """Render a Jinja2 template, compatible with old and new starlette."""
     context = dict(context or {})
     if _REQUEST_FIRST:
-        return templates.TemplateResponse(request, name, context)
+        return templates.TemplateResponse(request, name, context, status_code=status_code)
     context["request"] = request
-    return templates.TemplateResponse(name, context)
+    return templates.TemplateResponse(name, context, status_code=status_code)
 
 
 # ============================================================================
 # Page Routes - HTML Templates
 # ============================================================================
+
+@app.get("/setup", response_class=HTMLResponse)
+def setup_page(request: Request):
+    """First-run page: create the administrator account."""
+    return render(request, "setup.html", {"suggested_username": settings.ADMIN_USERNAME})
+
+
+@app.post("/api/auth/setup")
+def create_admin(
+    request: Request,
+    username: str = Form(...),
+    password: str = Form(...),
+    password_confirm: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    """Create the administrator - only while none exists."""
+    from app.services import auth
+
+    if auth.is_configured(db):
+        raise HTTPException(status_code=403, detail="Amministratore gia' configurato")
+
+    problem = auth.password_problem(password, password_confirm)
+    if problem:
+        return render(
+            request, "setup.html",
+            {"error": problem, "suggested_username": username},
+            status_code=400,
+        )
+
+    auth.set_admin(db, username, password)
+    return _logged_in_redirect(db, username, "/")
+
+
+@app.get("/login", response_class=HTMLResponse)
+def login_page(request: Request, next: str = None, db: Session = Depends(get_db)):
+    """Login form."""
+    from app.services import auth
+
+    # Already signed in? Don't show the form again.
+    token = request.cookies.get(auth.SESSION_COOKIE)
+    if settings.AUTH_ENABLED and auth.read_session_token(token, auth.get_secret(db)):
+        return RedirectResponse(_safe_next(next), status_code=303)
+
+    return render(request, "login.html", {"next": _safe_next(next)})
+
+
+@app.post("/api/auth/login")
+def login(
+    request: Request,
+    username: str = Form(...),
+    password: str = Form(...),
+    next: str = Form("/"),
+    db: Session = Depends(get_db),
+):
+    """Check credentials and start a session."""
+    from app.services import auth
+
+    ok, error = auth.verify_login(db, username, password)
+    if not ok:
+        return render(
+            request, "login.html",
+            {"error": error, "username": username, "next": _safe_next(next)},
+            status_code=401,
+        )
+
+    return _logged_in_redirect(db, auth.get_username(db), _safe_next(next))
+
+
+@app.post("/api/auth/logout")
+@app.get("/logout")
+def logout():
+    """Drop the session cookie."""
+    from app.services import auth
+
+    response = RedirectResponse("/login", status_code=303)
+    response.delete_cookie(auth.SESSION_COOKIE)
+    return response
+
+
+@app.post("/api/auth/password")
+def change_password(
+    payload: dict = Body(...),
+    request: Request = None,
+    db: Session = Depends(get_db),
+):
+    """Change the administrator password (current password required)."""
+    from app.services import auth
+
+    current = payload.get("current_password") or ""
+    new = payload.get("new_password") or ""
+    confirm = payload.get("new_password_confirm")
+
+    # Checked directly rather than through verify_login: this must not feed
+    # the login lockout counter, or mistyping the current password a few
+    # times would lock the admin out of the login page too.
+    stored = settings_store.get_setting(db, auth.PASSWORD_HASH_KEY)
+    if not auth.verify_password(current, stored or ""):
+        raise HTTPException(status_code=400, detail="Password attuale non corretta")
+
+    problem = auth.password_problem(new, confirm)
+    if problem:
+        raise HTTPException(status_code=400, detail=problem)
+
+    username = (payload.get("username") or auth.get_username(db)).strip()
+    auth.set_admin(db, username, new)
+
+    # Every other session is dropped; the caller gets a fresh cookie so
+    # changing the password doesn't log them out of the page they're on.
+    secret = auth.rotate_secret(db)
+    response = JSONResponse({
+        "message": "Password aggiornata. Le altre sessioni sono state disconnesse."
+    })
+    response.set_cookie(
+        auth.SESSION_COOKIE,
+        auth.create_session_token(username, secret),
+        max_age=settings.SESSION_TTL_HOURS * 3600,
+        httponly=True,
+        samesite="lax",
+        secure=settings.SESSION_COOKIE_SECURE,
+    )
+    return response
+
+
+@app.get("/api/auth/me")
+def whoami(request: Request):
+    """Who is logged in - used by the header."""
+    return {"username": current_user(request), "auth_enabled": settings.AUTH_ENABLED}
+
+
+def _safe_next(target: str) -> str:
+    """
+    Only allow redirects back into this app.
+
+    Without this, /login?next=https://evil.example would bounce the user
+    off-site straight after authenticating.
+    """
+    if not target or not target.startswith("/") or target.startswith("//"):
+        return "/"
+    return target
+
+
+def _logged_in_redirect(db: Session, username: str, target: str) -> RedirectResponse:
+    from app.services import auth
+
+    response = RedirectResponse(target, status_code=303)
+    response.set_cookie(
+        auth.SESSION_COOKIE,
+        auth.create_session_token(username, auth.get_secret(db)),
+        max_age=settings.SESSION_TTL_HOURS * 3600,
+        httponly=True,           # not readable from JavaScript
+        samesite="lax",          # not sent on cross-site POSTs
+        secure=settings.SESSION_COOKIE_SECURE,
+    )
+    return response
+
 
 @app.get("/", response_class=HTMLResponse)
 def read_root(request: Request):

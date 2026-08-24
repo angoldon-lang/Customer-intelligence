@@ -27,6 +27,35 @@
     </div>
 
     <div class="card">
+        <h3>🔒 Accesso amministratore</h3>
+        <form id="password-form">
+            <div class="form-group">
+                <label>Utente</label>
+                <input type="text" id="admin-username" autocomplete="username">
+            </div>
+
+            <div class="form-group">
+                <label>Password attuale</label>
+                <input type="password" id="current-password" autocomplete="current-password" required>
+            </div>
+
+            <div class="form-group">
+                <label>Nuova password</label>
+                <input type="password" id="new-password" autocomplete="new-password" required>
+                <small style="color: #7f8c8d;">Almeno 10 caratteri.</small>
+            </div>
+
+            <div class="form-group">
+                <label>Conferma nuova password</label>
+                <input type="password" id="new-password-confirm" autocomplete="new-password" required>
+            </div>
+
+            <button type="submit" class="btn btn-success">💾 Cambia password</button>
+            <a href="/logout" class="btn btn-danger" style="text-decoration: none;">Esci</a>
+        </form>
+    </div>
+
+    <div class="card">
         <h3>📧 Configurazione Email (SMTP)</h3>
         <form id="smtp-form">
             <div class="form-group">
@@ -586,6 +615,44 @@
         }, 'Filtri di default salvati.');
     });
 
+    document.getElementById('password-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        try {
+            const response = await fetch('/api/auth/password', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    username: value('admin-username'),
+                    current_password: value('current-password'),
+                    new_password: value('new-password'),
+                    new_password_confirm: value('new-password-confirm'),
+                })
+            });
+            const data = await response.json();
+
+            if (response.ok) {
+                alert('✓ ' + data.message);
+                document.getElementById('password-form').reset();
+                loadCurrentUser();
+            } else {
+                alert('Errore: ' + (data.detail || 'cambio password fallito'));
+            }
+        } catch (error) {
+            alert('Errore: ' + error.message);
+        }
+    });
+
+    async function loadCurrentUser() {
+        try {
+            const response = await fetch('/api/auth/me');
+            const data = await response.json();
+            setValue('admin-username', data.username);
+        } catch (error) {
+            console.error('Error loading user:', error);
+        }
+    }
+
     function value(id) {
         const el = document.getElementById(id);
         return el ? el.value.trim() : '';
@@ -649,6 +716,7 @@
 
     // Load status on page load
     loadSettings();
+    loadCurrentUser();
     checkAPIStatus();
     checkSchedulerStatus();
     loadProvidersStatus();
