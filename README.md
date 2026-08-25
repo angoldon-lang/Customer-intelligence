@@ -233,6 +233,54 @@ La dashboard è completamente funzionante con **8 pagine principali**:
 - **Filtri di default** aziende e notizie
 - Info sistema (versione, database, roadmap)
 
+## Configurare l'invio email
+
+Si configura da **Impostazioni → Configurazione Email**, che ha i preset per
+Gmail e Microsoft 365. Il pulsante **Test SMTP** salva quanto vedi a schermo
+e prova la connessione, riportando in chiaro cosa non va.
+
+### Gmail / Google Workspace
+
+| Campo | Valore |
+|---|---|
+| Server | `smtp.gmail.com` |
+| Porta | `587` |
+| Cifratura | STARTTLS |
+| Utente | il tuo indirizzo Gmail completo |
+| Password | **password per le app**, non quella dell'account |
+
+Gmail **non accetta la password normale dell'account**: è la causa quasi
+certa di un errore `535 5.7.8 Username and Password not accepted`. Serve una
+password per le app di 16 caratteri, generabile su
+[myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords)
+solo se la **verifica in due passaggi è attiva** sull'account. Incollala
+senza spazi.
+
+L'email mittente deve coincidere con l'utente SMTP o essere un alias
+autorizzato in Gmail, altrimenti il server rifiuta il mittente.
+
+### Microsoft 365
+
+| Campo | Valore |
+|---|---|
+| Server | `smtp.office365.com` |
+| Porta | `587` |
+| Cifratura | STARTTLS |
+
+Attenzione: Microsoft **disattiva SMTP AUTH sulle caselle per impostazione
+predefinita** e non offre password per le app come Gmail. Perché funzioni
+serve che un amministratore del tenant abiliti *Authenticated SMTP* sulla
+singola casella, e con MFA attiva l'autenticazione SMTP di base non funziona
+comunque. In pratica, **se hai già Gmail funzionante è la strada più
+semplice**; Microsoft 365 conviene solo se hai accesso amministrativo al
+tenant.
+
+### Porte e cifratura
+
+Porta `587` = STARTTLS (consigliata). Porta `465` = SSL implicito, da
+selezionare nel campo "Cifratura". Sbagliare l'abbinamento produce un timeout
+o un errore TLS, non un errore di credenziali.
+
 ## Architettura ricerca notizie
 
 Il flusso è pensato per dare a Claude solo un pacchetto strutturato per
@@ -263,6 +311,26 @@ generazione report email per cluster
 | **GDELT** (`app/providers/gdelt.py`) | Gratuito, nessuna chiave | Copertura ampia: titolo, url, dominio, data. Nessuno snippet. | Attivo di default (`GDELT_ENABLED=True`) |
 | **GNews.io** (`app/providers/gnews.py`) | Piano gratuito 100 richieste/giorno (solo dev secondo il loro ToS), piani a pagamento per produzione | Validazione/copertura aggiuntiva con snippet (`description`) | `GNEWS_API_KEY` in `.env` |
 | **RSS ufficiali** (`app/providers/rss.py`) | Gratuito | Comunicati stampa/IR direttamente dal sito dell'azienda, la fonte più affidabile | Configurabile da Impostazioni → "Fonti notizie", o via `POST /api/news-sources` |
+| **APITube** (`app/providers/apitube.py`) | A pagamento, a consumo | Articoli arricchiti: `description` + `body`, dominio e rank della fonte, sentiment, entità, categoria. È la fonte migliore per la rassegna stampa | `APITUBE_API_KEY` in `.env` |
+
+#### APITube e il consumo di quota
+
+APITube è a consumo, quindi il provider è costruito per **spendere il meno
+possibile**:
+
+- viene interrogato **solo per le aziende su cui le fonti gratuite non hanno
+  trovato nulla** (`APITUBE_FALLBACK_ONLY=True`), cioè esattamente dove una
+  ricerca a pagamento ha senso. Nella pagina Copertura queste aziende
+  compaiono come `APITube: non richiesto`;
+- ha un **tetto di richieste per run** (`APITUBE_MAX_REQUESTS_PER_RUN=25`):
+  superato quello, le aziende successive vengono saltate e il run prosegue.
+  Senza questo tetto, un solo giro su 194 aziende esaurirebbe una chiave di
+  prova;
+- su `401/403` (chiave non valida) e `402/429` (quota finita) si disattiva
+  subito per il resto del run invece di continuare a chiamare.
+
+Con una chiave di prova conviene partire così e alzare
+`APITUBE_MAX_REQUESTS_PER_RUN` solo quando sai quanta quota hai davvero.
 
 Se nessun provider è configurabile/raggiungibile, il sistema usa
 `TestNewsProvider` (dati di esempio) così la pipeline resta testabile.

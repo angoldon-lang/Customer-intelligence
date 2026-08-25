@@ -24,6 +24,11 @@ class NewsArticle:
 class NewsSourceProvider(ABC):
     """Abstract base class for news source providers."""
 
+    # When True, the searcher consults this provider only for companies the
+    # other providers found nothing for. Metered/paid sources set this so
+    # their quota is spent where the free ones came up empty.
+    fallback_only = False
+
     @abstractmethod
     def search_company_news(self, company_name: str, keywords: List[str] = None) -> List[NewsArticle]:
         """

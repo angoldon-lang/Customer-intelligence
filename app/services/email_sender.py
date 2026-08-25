@@ -22,6 +22,7 @@ class EmailSender:
             self.smtp_password = get_setting(db, "SMTP_PASSWORD")
             self.from_email = get_setting(db, "SMTP_FROM_EMAIL") or self.smtp_user
             self.from_name = get_setting(db, "SMTP_FROM_NAME")
+            self.use_ssl = bool(get_setting(db, "SMTP_USE_SSL"))
         else:
             self.smtp_host = settings.SMTP_HOST
             self.smtp_port = settings.SMTP_PORT
@@ -29,6 +30,41 @@ class EmailSender:
             self.smtp_password = settings.SMTP_PASSWORD
             self.from_email = settings.SMTP_FROM_EMAIL
             self.from_name = settings.SMTP_FROM_NAME
+            self.use_ssl = settings.SMTP_USE_SSL
+
+        self.timeout = settings.SMTP_TIMEOUT
+
+    def config_problem(self) -> str:
+        """What's missing from the configuration, or None if it's complete."""
+        if not self.smtp_host:
+            return "Server SMTP non configurato (Impostazioni > Configurazione Email)"
+        if not self.smtp_user:
+            return "Utente SMTP non configurato"
+        if not self.smtp_password:
+            return "Password SMTP non configurata"
+        if not self.from_email:
+            return "Email mittente non configurata"
+        return None
+
+    def _connect(self):
+        """
+        Open an SMTP connection, picking the right kind of TLS.
+
+        Port 465 speaks TLS from the first byte (SMTP_SSL); 587 and 25 start
+        in clear and upgrade with STARTTLS. Calling starttls() on 465 - what
+        this code used to do unconditionally - just hangs until timeout.
+        """
+        port = int(self.smtp_port or 587)
+
+        if self.use_ssl or port == 465:
+            return smtplib.SMTP_SSL(self.smtp_host, port, timeout=self.timeout)
+
+        server = smtplib.SMTP(self.smtp_host, port, timeout=self.timeout)
+        server.ehlo()
+        if server.has_extn("starttls"):
+            server.starttls()
+            server.ehlo()
+        return server
 
     def send_report(
         self,
@@ -38,44 +74,98 @@ class EmailSender:
         text_content: str = None
     ) -> Dict[str, Any]:
         """Send report email."""
-        try:
-            # Validate config
-            if not self.smtp_host or not self.from_email:
-                return {
-                    'success': False,
-                    'error': 'SMTP configuration not set'
-                }
+        problem = self.config_problem()
+        if problem:
+            return {'success': False, 'error': problem}
 
-            # Create message
+        try:
             msg = MIMEMultipart('alternative')
             msg['Subject'] = subject
             msg['From'] = formataddr((self.from_name, self.from_email)) if self.from_name else self.from_email
             msg['To'] = ', '.join(to_emails)
 
-            # Attach text version
+            # Plain part first: the last attached part is what mail clients
+            # prefer, so HTML has to come second.
             if text_content:
                 msg.attach(MIMEText(text_content, 'plain'))
-
-            # Attach HTML version
             msg.attach(MIMEText(html_content, 'html'))
 
-            # Send
-            with smtplib.SMTP(self.smtp_host, self.smtp_port, timeout=15) as server:
-                server.starttls()
+            with self._connect() as server:
                 server.login(self.smtp_user, self.smtp_password)
                 server.send_message(msg)
 
             return {
                 'success': True,
                 'recipients': len(to_emails),
-                'message': f'Email sent to {len(to_emails)} recipients'
+                'message': f'Email inviata a {len(to_emails)} destinatari'
             }
 
         except Exception as e:
-            return {
-                'success': False,
-                'error': str(e)
-            }
+            return {'success': False, 'error': self.explain_error(e)}
+
+    def explain_error(self, error: Exception) -> str:
+        """
+        Turn an SMTP failure into something actionable.
+
+        The raw exceptions ("(535, b'5.7.8 Username and Password not
+        accepted')") send people to reset a password that was never the
+        problem.
+        """
+        text = str(error)
+        lowered = text.lower()
+        host = (self.smtp_host or "").lower()
+
+        if isinstance(error, smtplib.SMTPAuthenticationError) or "535" in text or "5.7.8" in text:
+            if "gmail" in host or "google" in host:
+                return (
+                    "Gmail ha rifiutato le credenziali. Con Gmail NON funziona la password "
+                    "normale dell'account: serve una password per le app (16 caratteri), che "
+                    "richiede la verifica in due passaggi attiva. "
+                    "Creala su https://myaccount.google.com/apppasswords e incollala nel campo "
+                    f"password. Dettaglio tecnico: {text}"
+                )
+            if "office365" in host or "outlook" in host:
+                return (
+                    "Microsoft 365 ha rifiutato le credenziali. Di solito non e' la password: "
+                    "Microsoft disattiva 'SMTP AUTH' sulle caselle per impostazione predefinita, "
+                    "e con MFA attiva l'accesso SMTP di base non funziona affatto. "
+                    "Serve che un amministratore abiliti SMTP AUTH sulla casella "
+                    f"(Authenticated SMTP) dall'interfaccia di amministrazione. Dettaglio: {text}"
+                )
+            return f"Credenziali SMTP rifiutate dal server. Dettaglio: {text}"
+
+        if isinstance(error, smtplib.SMTPSenderRefused) or "5.7.0" in text or "not allowed" in lowered:
+            return (
+                f"Il server non accetta '{self.from_email}' come mittente. "
+                f"Di norma l'email mittente deve coincidere con l'utente SMTP "
+                f"('{self.smtp_user}') o essere un alias autorizzato. Dettaglio: {text}"
+            )
+
+        if isinstance(error, (TimeoutError, OSError)) and (
+            "timed out" in lowered or "timeout" in lowered
+        ):
+            return (
+                f"Nessuna risposta da {self.smtp_host}:{self.smtp_port} entro {self.timeout}s. "
+                f"Se hai impostato la porta 465 assicurati che sia SSL, altrimenti usa la 587. "
+                f"Puo' anche essere il firewall di rete che blocca la porta. Dettaglio: {text}"
+            )
+
+        if "ssl" in lowered or "wrong version number" in lowered:
+            return (
+                f"Errore TLS con {self.smtp_host}:{self.smtp_port}. Combinazione porta/cifratura "
+                f"sbagliata: usa 587 (STARTTLS) oppure 465 (SSL). Dettaglio: {text}"
+            )
+
+        if isinstance(error, smtplib.SMTPServerDisconnected) or "connection refused" in lowered:
+            return (
+                f"Impossibile connettersi a {self.smtp_host}:{self.smtp_port}. "
+                f"Verifica nome del server e porta. Dettaglio: {text}"
+            )
+
+        if "getaddrinfo" in lowered or "name or service not known" in lowered:
+            return f"Server SMTP '{self.smtp_host}' non trovato: controlla il nome. Dettaglio: {text}"
+
+        return text
 
     def send_alert(
         self,
@@ -119,17 +209,22 @@ Log in to the dashboard to view details and take action.
             return {'success': False, 'error': str(e)}
 
     def test_connection(self) -> Dict[str, Any]:
-        """Test SMTP connection."""
+        """Test SMTP connection, reporting what to fix when it fails."""
+        problem = self.config_problem()
+        if problem:
+            return {'success': False, 'error': problem}
+
         try:
-            with smtplib.SMTP(self.smtp_host, self.smtp_port, timeout=15) as server:
-                server.starttls()
+            with self._connect() as server:
                 server.login(self.smtp_user, self.smtp_password)
+
+            mode = "SSL" if (self.use_ssl or int(self.smtp_port or 587) == 465) else "STARTTLS"
             return {
                 'success': True,
-                'message': 'SMTP connection successful'
+                'message': (
+                    f"Connessione riuscita a {self.smtp_host}:{self.smtp_port} ({mode}) "
+                    f"come {self.smtp_user}."
+                ),
             }
         except Exception as e:
-            return {
-                'success': False,
-                'error': str(e)
-            }
+            return {'success': False, 'error': self.explain_error(e)}

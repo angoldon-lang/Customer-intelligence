@@ -10,6 +10,13 @@ from sqlalchemy.orm import Session
 from app.models import AppSetting
 from app.config import settings
 
+def _as_bool(value: Any) -> bool:
+    """Checkbox values arrive as "true"/"false"/"on" strings, not booleans."""
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"true", "1", "yes", "on"}
+
+
 # key -> (env fallback attribute, type)
 KNOWN_SETTINGS = {
     "SMTP_HOST": ("SMTP_HOST", str),
@@ -18,6 +25,7 @@ KNOWN_SETTINGS = {
     "SMTP_PASSWORD": ("SMTP_PASSWORD", str),
     "SMTP_FROM_EMAIL": ("SMTP_FROM_EMAIL", str),
     "SMTP_FROM_NAME": ("SMTP_FROM_NAME", str),
+    "SMTP_USE_SSL": ("SMTP_USE_SSL", _as_bool),
     "DEFAULT_COMPANY_TYPE": ("DEFAULT_COMPANY_TYPE", str),
     "DEFAULT_COMPANY_STATUS": ("DEFAULT_COMPANY_STATUS", str),
     "MIN_RELEVANCE_SCORE": ("MIN_RELEVANCE_SCORE", int),

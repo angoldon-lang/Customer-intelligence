@@ -1131,6 +1131,12 @@ def get_providers_status(db: Session = Depends(get_db)):
         "gdelt": {"enabled": settings.GDELT_ENABLED, "requires_key": False},
         "gnews": {"enabled": bool(settings.GNEWS_API_KEY), "requires_key": True},
         "rss": {"enabled": settings.RSS_ENABLED and rss_count > 0, "active_feeds": rss_count},
+        "apitube": {
+            "enabled": bool(settings.APITUBE_API_KEY),
+            "requires_key": True,
+            "fallback_only": settings.APITUBE_FALLBACK_ONLY,
+            "max_requests_per_run": settings.APITUBE_MAX_REQUESTS_PER_RUN,
+        },
     }
 
 

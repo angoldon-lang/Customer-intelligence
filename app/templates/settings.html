@@ -59,6 +59,17 @@
         <h3>📧 Configurazione Email (SMTP)</h3>
         <form id="smtp-form">
             <div class="form-group">
+                <label>Provider</label>
+                <select id="smtp-preset" onchange="applySmtpPreset()">
+                    <option value="">— scegli per compilare server e porta —</option>
+                    <option value="gmail">Gmail / Google Workspace</option>
+                    <option value="office365">Microsoft 365 / Outlook</option>
+                    <option value="custom">Altro (inserisco a mano)</option>
+                </select>
+                <small style="color: #7f8c8d;" id="smtp-preset-hint"></small>
+            </div>
+
+            <div class="form-group">
                 <label>Server SMTP</label>
                 <input type="text" id="smtp-host" placeholder="smtp.gmail.com">
             </div>
@@ -66,6 +77,14 @@
             <div class="form-group">
                 <label>Porta</label>
                 <input type="number" id="smtp-port" placeholder="587">
+            </div>
+
+            <div class="form-group">
+                <label>Cifratura</label>
+                <select id="smtp-use-ssl">
+                    <option value="false">STARTTLS (porta 587 — consigliato)</option>
+                    <option value="true">SSL/TLS implicito (porta 465)</option>
+                </select>
             </div>
 
             <div class="form-group">
@@ -88,7 +107,9 @@
                 <label>Password app</label>
                 <input type="password" id="smtp-password" placeholder="password">
                 <small style="color: #7f8c8d;" id="smtp-password-hint">
-                    Per Gmail: <a href="https://support.google.com/accounts/answer/185833" target="_blank">crea password app</a>
+                    Gmail non accetta la password dell'account: serve una
+                    <a href="https://myaccount.google.com/apppasswords" target="_blank">password per le app</a>
+                    (16 caratteri, richiede la verifica in due passaggi attiva).
                 </small>
             </div>
 
@@ -311,11 +332,22 @@
 
             const badge = (ok, label) => `<span class="badge ${ok ? 'badge-success' : 'badge-warning'}" style="margin-right: 8px;">${ok ? '✓' : '⚠'} ${label}</span>`;
 
+            const apitube = data.apitube || {};
+            let apitubeLabel;
+            if (!apitube.enabled) {
+                apitubeLabel = 'APITube (manca APITUBE_API_KEY in .env)';
+            } else if (apitube.fallback_only) {
+                apitubeLabel = `APITube — solo aziende senza risultati, max ${apitube.max_requests_per_run}/run`;
+            } else {
+                apitubeLabel = `APITube — tutte le aziende, max ${apitube.max_requests_per_run}/run`;
+            }
+
             document.getElementById('providers-status').innerHTML =
                 badge(data.google_news_rss.enabled, 'Google News RSS (gratuito)') +
                 badge(data.gdelt.enabled, 'GDELT (gratuito)') +
                 badge(data.gnews.enabled, data.gnews.enabled ? 'GNews.io' : 'GNews.io (manca GNEWS_API_KEY in .env)') +
-                badge(data.rss.enabled, `RSS ufficiali (${data.rss.active_feeds} attivi)`);
+                badge(data.rss.enabled, `RSS ufficiali (${data.rss.active_feeds} attivi)`) +
+                badge(apitube.enabled, apitubeLabel);
         } catch (error) {
             console.error('Error loading providers status:', error);
         }
@@ -384,14 +416,59 @@
         }
     });
 
+    const SMTP_PRESETS = {
+        gmail: {
+            host: 'smtp.gmail.com', port: 587, ssl: 'false',
+            hint: 'Serve una password per le app (non quella dell\'account) e la verifica in due passaggi attiva.'
+        },
+        office365: {
+            host: 'smtp.office365.com', port: 587, ssl: 'false',
+            hint: 'Microsoft disattiva SMTP AUTH sulle caselle per impostazione predefinita: un amministratore deve abilitarlo, e con MFA attiva l\'accesso SMTP di base non funziona.'
+        },
+        custom: { hint: 'Chiedi al tuo provider server, porta e tipo di cifratura.' },
+    };
+
+    function applySmtpPreset() {
+        const preset = SMTP_PRESETS[document.getElementById('smtp-preset').value];
+        const hint = document.getElementById('smtp-preset-hint');
+        if (!preset) {
+            hint.textContent = '';
+            return;
+        }
+        hint.textContent = preset.hint || '';
+        if (preset.host) {
+            document.getElementById('smtp-host').value = preset.host;
+            document.getElementById('smtp-port').value = preset.port;
+            document.getElementById('smtp-use-ssl').value = preset.ssl;
+        }
+    }
+
     async function testSMTP() {
+        // Test what's on screen, not what was saved earlier: otherwise
+        // you'd have to save before every attempt while troubleshooting.
+        if (!confirm('Salvo la configurazione visualizzata e provo la connessione?')) return;
+
+        await fetch('/api/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                SMTP_HOST: value('smtp-host'),
+                SMTP_PORT: value('smtp-port'),
+                SMTP_USER: value('smtp-user'),
+                SMTP_FROM_EMAIL: value('smtp-from-email'),
+                SMTP_FROM_NAME: value('smtp-from-name'),
+                SMTP_USE_SSL: value('smtp-use-ssl'),
+                SMTP_PASSWORD: value('smtp-password'),
+            })
+        });
+
         try {
             const response = await fetch('/api/email/test-smtp', { method: 'POST' });
             const data = await response.json();
             if (data.success) {
-                alert('✓ Connessione SMTP riuscita!');
+                alert('✓ ' + data.message);
             } else {
-                alert('✗ Connessione SMTP fallita: ' + (data.error || 'errore sconosciuto'));
+                alert('✗ Connessione SMTP fallita\n\n' + (data.error || 'errore sconosciuto'));
             }
         } catch (error) {
             alert('Errore: ' + error.message);
@@ -578,6 +655,7 @@
             SMTP_USER: value('smtp-user'),
             SMTP_FROM_EMAIL: value('smtp-from-email'),
             SMTP_FROM_NAME: value('smtp-from-name'),
+            SMTP_USE_SSL: value('smtp-use-ssl'),
             // Empty = keep the stored password (the server ignores it).
             SMTP_PASSWORD: value('smtp-password'),
         }, 'Configurazione SMTP salvata. Usa "Test SMTP" per verificarla.');
@@ -675,6 +753,7 @@
             setValue('smtp-user', data.SMTP_USER);
             setValue('smtp-from-email', data.SMTP_FROM_EMAIL);
             setValue('smtp-from-name', data.SMTP_FROM_NAME);
+            setValue('smtp-use-ssl', String(Boolean(data.SMTP_USE_SSL)));
 
             // The password is never sent back - only whether one is stored.
             const hint = document.getElementById('smtp-password-hint');

@@ -34,6 +34,10 @@ class Settings:
     SMTP_PASSWORD: str = os.getenv("SMTP_PASSWORD", "")
     SMTP_FROM_EMAIL: str = os.getenv("SMTP_FROM_EMAIL", os.getenv("SMTP_USER", ""))
     SMTP_FROM_NAME: str = os.getenv("SMTP_FROM_NAME", "Customer Intelligence Monitor")
+    # Implicit TLS. Inferred from port 465 when not set explicitly; 587 and
+    # 25 upgrade with STARTTLS instead.
+    SMTP_USE_SSL: bool = os.getenv("SMTP_USE_SSL", "False").lower() == "true"
+    SMTP_TIMEOUT: int = int(os.getenv("SMTP_TIMEOUT", "20"))
 
     # Application
     DEBUG: bool = os.getenv("DEBUG", "False").lower() == "true"
@@ -59,6 +63,19 @@ class Settings:
 
     # RSS / official company sources, configured via the news_sources table
     RSS_ENABLED: bool = os.getenv("RSS_ENABLED", "True").lower() == "true"
+
+    # APITube (paid, metered). Used only for companies the free sources
+    # found nothing for, and capped per run so a trial key can't be drained
+    # by a single pass over the whole company list.
+    APITUBE_API_KEY: Optional[str] = os.getenv("APITUBE_API_KEY")
+    APITUBE_MAX_REQUESTS_PER_RUN: int = int(os.getenv("APITUBE_MAX_REQUESTS_PER_RUN", "25"))
+    # Restrict to sources based in NEWS_COUNTRY. Off by default: Italian
+    # companies get covered by foreign outlets too, and the language filter
+    # already keeps the results relevant.
+    APITUBE_COUNTRY_FILTER: bool = os.getenv("APITUBE_COUNTRY_FILTER", "False").lower() == "true"
+    # Set False to query APITube for every company, not just the ones with
+    # no free results (burns quota much faster).
+    APITUBE_FALLBACK_ONLY: bool = os.getenv("APITUBE_FALLBACK_ONLY", "True").lower() == "true"
 
     # Safety cap on how many companies a single monitoring run processes.
     # With large company lists this keeps a run's duration and API usage

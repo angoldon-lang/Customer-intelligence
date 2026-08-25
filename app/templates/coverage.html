@@ -132,7 +132,8 @@
         if (!detail) return null;
         const NAMES = {
             googlenewsrss: 'Google News', gdelt: 'GDELT',
-            gnews: 'GNews', rss: 'RSS', testnews: 'Test'
+            gnews: 'GNews', rss: 'RSS', testnews: 'Test',
+            apitube: 'APITube'
         };
         return detail.split(',').map(part => {
             const [rawName, ...rest] = part.trim().split(':');
@@ -141,7 +142,10 @@
             if (value === '0') return `${name}: nessun risultato`;
             if (/^\d+$/.test(value)) return `<strong style="color:#27ae60;">${name}: ${value}</strong>`;
             if (value.includes('429') || value.includes('quota')) return `${name}: limite raggiunto`;
-            if (value.includes('disabled earlier')) return `${name}: sospeso`;
+            if (value.includes('disabled earlier') || value.includes('in pausa')) return `${name}: sospeso`;
+            if (value.includes('non necessario')) return `${name}: non richiesto`;
+            if (value.includes('budget')) return `${name}: budget del run esaurito`;
+            if (value.includes('not configured')) return `${name}: non configurato`;
             if (value.includes('403')) return `${name}: bloccato`;
             if (value.startsWith('error')) return `${name}: errore`;
             return `${name}: ${value}`;

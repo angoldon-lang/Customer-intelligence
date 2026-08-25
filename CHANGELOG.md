@@ -4,6 +4,45 @@ Tutte le modifiche rilevanti a questo progetto sono documentate in questo file.
 Il formato segue [Keep a Changelog](https://keepachangelog.com/) e il progetto
 usa [Semantic Versioning](https://semver.org/lang/it/).
 
+## [0.11.0] - 2026-08-24
+
+### Added
+- **Provider APITube** (`app/providers/apitube.py`). A differenza delle
+  fonti gratuite restituisce articoli arricchiti (`description` + `body`,
+  dominio e rank della fonte, sentiment, entita'), quindi e' la base per la
+  rassegna stampa. Essendo a consumo, e' costruito per spendere poco:
+  - interrogato **solo per le aziende su cui le fonti gratuite non hanno
+    trovato nulla** (`APITUBE_FALLBACK_ONLY`), cioe' dove una ricerca a
+    pagamento ha davvero senso;
+  - **tetto di richieste per run** (`APITUBE_MAX_REQUESTS_PER_RUN`, 25 di
+    default): senza, un solo giro su 194 aziende esaurirebbe una chiave di
+    prova;
+  - si disattiva per il resto del run su chiave non valida (401/403) o
+    quota finita (402/429), invece di continuare a chiamare;
+  - il nome azienda e' cercato come frase esatta, altrimenti "Sag Tubi
+    Tredozio" troverebbe articoli con quelle parole sparse.
+- Nuovo attributo `fallback_only` sui provider: il searcher salta le fonti
+  che lo dichiarano quando le altre hanno gia' trovato qualcosa.
+- **Preset SMTP per Gmail e Microsoft 365** in Impostazioni, che compilano
+  server, porta e cifratura, e selettore STARTTLS / SSL.
+
+### Fixed
+- **La porta SMTP 465 non poteva funzionare**: il codice chiamava sempre
+  `starttls()`, ma la 465 parla TLS dal primo byte e richiede `SMTP_SSL`.
+  Chi la impostava otteneva un timeout inspiegabile. Ora la modalita' e'
+  scelta dalla porta (o forzata con `SMTP_USE_SSL`), e i server senza
+  STARTTLS non mandano piu' in errore la connessione.
+- **Errori SMTP incomprensibili**: `(535, b'5.7.8 Username and Password not
+  accepted')` mandava a reimpostare una password che non era il problema.
+  Ora il messaggio dice cosa fare davvero, distinguendo Gmail (serve la
+  password per le app, non quella dell'account), Microsoft 365 (serve che
+  un amministratore abiliti SMTP AUTH sulla casella), mittente rifiutato,
+  porta/cifratura sbagliate, host inesistente e timeout.
+- **Configurazione SMTP incompleta**: si tentava comunque la connessione,
+  fallendo in modo oscuro. Ora dice subito quale campo manca.
+- Il pulsante **Test SMTP** prova la configurazione a schermo invece
+  dell'ultima salvata: non serve piu' salvare a ogni tentativo.
+
 ## [0.10.0] - 2026-08-24
 
 ### Added

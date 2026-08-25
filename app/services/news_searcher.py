@@ -18,6 +18,7 @@ from app.providers.google_news_rss import GoogleNewsRSSProvider
 from app.providers.gdelt import GDELTProvider
 from app.providers.gnews import GNewsProvider
 from app.providers.rss import RSSProvider
+from app.providers.apitube import APITubeProvider
 from app.providers.test import TestNewsProvider
 
 
@@ -63,6 +64,13 @@ class NewsSearcher:
             rss = RSSProvider(db)
             rss.refresh()
             providers.append(rss)
+
+        # Last on purpose: it's paid and metered, so it only gets asked
+        # about companies the free sources above found nothing for.
+        if settings.APITUBE_API_KEY:
+            apitube = APITubeProvider()
+            apitube.fallback_only = settings.APITUBE_FALLBACK_ONLY
+            providers.append(apitube)
 
         if not providers:
             # Nothing configured (no network / no keys) - fall back to
@@ -131,6 +139,14 @@ class NewsSearcher:
 
         for provider in providers:
             label = self._provider_label(provider)
+
+            # Paid sources marked fallback_only are consulted only when the
+            # free ones came up empty, so their quota goes to the companies
+            # that actually need it.
+            if getattr(provider, "fallback_only", False) and news_items:
+                provider_summary.append(f"{label}:non necessario")
+                continue
+
             try:
                 articles = provider.search_company_news(company.company_name)
             except Exception as e:
