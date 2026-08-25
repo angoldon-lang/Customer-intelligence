@@ -1526,6 +1526,61 @@ def save_settings(payload: dict = Body(...), db: Session = Depends(get_db)):
     return {"saved": saved, "message": f"{len(saved)} impostazioni salvate"}
 
 
+@app.post("/api/admin/review-off-topic")
+def review_off_topic_news(apply: bool = False, db: Session = Depends(get_db)):
+    """
+    Find stored news whose company is never named in title or summary.
+
+    Google News relaxes quoted queries, so archives filled up with local
+    news that has nothing to do with the company. This check is textual and
+    free - no API calls - and by default only reports: pass apply=true to
+    move the matches to "Rifiutata".
+
+    Only items still awaiting a decision are touched: an article you
+    approved or rejected by hand keeps your decision.
+    """
+    from app.services.classifier import NewsClassifier
+
+    items = (
+        db.query(NewsItem)
+        .filter(NewsItem.status.in_(["New", "Needs Review"]))
+        .all()
+    )
+
+    off_topic = []
+    for item in items:
+        company = item.company
+        if not company:
+            continue
+        if NewsClassifier.name_appears(company.company_name, item.title, item.summary):
+            continue
+        off_topic.append(item)
+
+    if apply:
+        for item in off_topic:
+            item.status = "Rejected"
+        db.commit()
+
+    examples = [
+        {"title": i.title[:90], "company": i.company.company_name}
+        for i in off_topic[:10]
+    ]
+
+    return {
+        "checked": len(items),
+        "off_topic": len(off_topic),
+        "applied": apply,
+        "examples": examples,
+        "message": (
+            f"{len(off_topic)} notizie su {len(items)} spostate in 'Rifiutate': "
+            f"l'azienda non e' mai nominata."
+            if apply else
+            f"{len(off_topic)} notizie su {len(items)} non nominano mai l'azienda. "
+            f"Rilancia con 'applica' per spostarle in 'Rifiutate'."
+        ),
+    }
+
+
 @app.post("/api/admin/fix-news-urls")
 def fix_news_urls(db: Session = Depends(get_db)):
     """

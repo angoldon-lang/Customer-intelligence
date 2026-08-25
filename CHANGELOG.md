@@ -4,6 +4,38 @@ Tutte le modifiche rilevanti a questo progetto sono documentate in questo file.
 Il formato segue [Keep a Changelog](https://keepachangelog.com/) e il progetto
 usa [Semantic Versioning](https://semver.org/lang/it/).
 
+## [0.13.0] - 2026-08-25
+
+### Fixed
+- **Notizie che non parlano affatto dell'azienda finivano nel flusso.**
+  Google News allarga da solo una query tra virgolette quando trova pochi
+  risultati, quindi cercando `"CMC RAVENNA SPA"` restituiva cronaca locale
+  su cantieri e viabilita' che non nomina mai CMC.
+  Il classificatore riceveva gia' l'istruzione di abbassare
+  `confidence_score` per gli omonimi, e il punteggio veniva salvato... e
+  **ignorato**: nessuna decisione lo leggeva. Ora:
+  - al classificatore viene chiesto un verdetto esplicito
+    (`is_about_company`) e viene detto se il nome dell'azienda compare
+    davvero nel titolo o nello snippet;
+  - una notizia giudicata non pertinente viene salvata come **Rifiutata**
+    invece che come nuova: resta visibile con il filtro "Rifiutate",
+    recuperabile e cancellabile in blocco, ma non entra nei report;
+  - il conteggio compare nel log del run, cosi' il filtro non agisce in
+    silenzio;
+  - si disattiva con `AUTO_REJECT_OFF_TOPIC=False`.
+- Il controllo sul nome ora richiede **tutte** le parole distintive: prima
+  il classificatore gratuito si accontentava di una sola, quindi qualsiasi
+  articolo su Ravenna sembrava una notizia su "CMC RAVENNA SPA". Le forme
+  societarie (SPA, SRL, Group...) non contano come corrispondenza.
+
+### Added
+- **"Rivedi notizie non pertinenti"** in Impostazioni > Manutenzione: passa
+  in rassegna l'archivio esistente e trova le notizie in cui l'azienda non
+  e' mai nominata. Il controllo e' testuale, **non consuma crediti**.
+  Mostra prima un'anteprima con esempi e sposta in "Rifiutate" solo dopo
+  conferma; le notizie gia' approvate o rifiutate a mano non vengono
+  toccate.
+
 ## [0.12.1] - 2026-08-25
 
 ### Fixed

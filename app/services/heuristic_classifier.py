@@ -91,10 +91,13 @@ class HeuristicClassifier:
         opportunity = self._count_hits(haystack, OPPORTUNITY_KEYWORDS)
         risk = self._count_hits(haystack, RISK_KEYWORDS)
 
-        # Does the company name actually appear in the text? Whole-word match
-        # on the longest token avoids "ASA" matching inside "casa".
-        tokens = [t for t in re.split(r"\W+", (company_name or "").lower()) if len(t) > 3]
-        name_hit = any(re.search(rf"\b{re.escape(t)}\b", haystack) for t in tokens) if tokens else False
+        # Does the company name actually appear in the text? Shared with the
+        # AI classifier so both modes judge a match the same way: every
+        # distinctive word must be there. Matching on just one of them made
+        # any article about Ravenna look like news on "CMC RAVENNA SPA".
+        from app.services.classifier import NewsClassifier
+
+        name_hit = NewsClassifier.name_appears(company_name, title, article_text)
 
         relevance = 5
         relevance += 2 if opportunity else 0
@@ -104,6 +107,10 @@ class HeuristicClassifier:
         relevance = max(1, min(10, relevance))
 
         return {
+            # Without the name anywhere in the text there is nothing tying
+            # the article to this company: keyword matching can't establish
+            # a link it cannot see.
+            "is_about_company": name_hit,
             "summary": (article_text or title)[:200],
             "category": category,
             "relevance_score": relevance,

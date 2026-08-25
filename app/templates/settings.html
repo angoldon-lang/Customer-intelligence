@@ -238,6 +238,9 @@
             <button type="button" class="btn btn-primary btn-sm" onclick="fixNewsUrls()">
                 🔗 Correggi link notizie
             </button>
+            <button type="button" class="btn btn-primary btn-sm" onclick="reviewOffTopic()">
+                🎯 Rivedi notizie non pertinenti
+            </button>
             <button type="button" class="btn btn-danger btn-sm" onclick="cleanupDatabase()">
                 🧹 Pulisci database
             </button>
@@ -698,6 +701,37 @@
             } else {
                 alert('Errore: ' + (data.detail || 'correzione fallita'));
             }
+        } catch (error) {
+            alert('Errore: ' + error.message);
+        }
+    }
+
+    async function reviewOffTopic() {
+        try {
+            // Report first, apply only after the user has seen examples:
+            // this moves news, so it shouldn't happen sight unseen.
+            const preview = await (await fetch('/api/admin/review-off-topic', { method: 'POST' })).json();
+
+            if (!preview.off_topic) {
+                alert('✓ Nessuna notizia da rivedere: in tutte quelle in attesa l\'azienda è nominata.');
+                return;
+            }
+
+            const examples = preview.examples
+                .map(e => `• [${e.company}] ${e.title}`)
+                .join('\n');
+
+            const confirmed = confirm(
+                `${preview.off_topic} notizie su ${preview.checked} non nominano mai l'azienda `
+                + `a cui sono associate.\n\nEsempi:\n${examples}\n\n`
+                + 'Spostarle in "Rifiutate"? Restano visibili con il filtro Rifiutate e '
+                + 'puoi sempre riapprovarle.'
+            );
+            if (!confirmed) return;
+
+            const response = await fetch('/api/admin/review-off-topic?apply=true', { method: 'POST' });
+            const data = await response.json();
+            alert(response.ok ? '✓ ' + data.message : 'Errore: ' + (data.detail || 'operazione fallita'));
         } catch (error) {
             alert('Errore: ' + error.message);
         }

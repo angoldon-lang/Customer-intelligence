@@ -372,6 +372,27 @@ Con una chiave di prova conviene partire così e alzare
 Se nessun provider è configurabile/raggiungibile, il sistema usa
 `TestNewsProvider` (dati di esempio) così la pipeline resta testabile.
 
+#### Notizie che non parlano dell'azienda
+
+Google News **allarga da solo una query tra virgolette** quando trova pochi
+risultati: cercando `"CMC RAVENNA SPA"` può restituire cronaca locale su
+cantieri e viabilità che non nomina mai CMC. Non è un difetto della ricerca,
+è come funziona il motore, quindi il filtro deve stare a valle.
+
+Il classificatore dà un verdetto esplicito (`is_about_company`) e riceve
+l'informazione se il nome dell'azienda compaia davvero nel titolo o nello
+snippet. Quando giudica l'articolo non pertinente, la notizia viene salvata
+come **Rifiutata**: resta visibile con il filtro "Rifiutate", è recuperabile
+e cancellabile in blocco, ma non entra nei report.
+
+Si regola con `AUTO_REJECT_OFF_TOPIC` (True/False) e `MIN_CONFIDENCE_SCORE`.
+
+Per l'archivio già accumulato c'è **Impostazioni → Manutenzione → "Rivedi
+notizie non pertinenti"**: cerca le notizie in cui l'azienda non è mai
+nominata, mostra un'anteprima con esempi e le sposta in "Rifiutate" solo
+dopo conferma. Il controllo è testuale e **non consuma crediti Anthropic**.
+Le notizie già approvate o rifiutate a mano non vengono toccate.
+
 #### Scegliere fonti e ordine di ricerca
 
 Da **Impostazioni → Fonti notizie** ogni fonte si attiva/disattiva e si

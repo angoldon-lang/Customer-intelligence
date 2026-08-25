@@ -78,6 +78,40 @@ class NewsClassifier:
         """True if the installed anthropic SDK has the Messages API."""
         return hasattr(Anthropic, "messages")
 
+    # Dropped when comparing a company name against article text: they
+    # carry no identifying weight and would match almost anything.
+    _LEGAL_FORMS = {
+        "spa", "s.p.a", "srl", "s.r.l", "srls", "snc", "s.n.c", "sas", "s.a.s",
+        "scarl", "scrl", "soc", "societa", "società", "coop", "cooperativa",
+        "group", "gruppo", "holding", "italia", "italy", "spa.", "ss",
+    }
+
+    @classmethod
+    def name_appears(cls, company_name: str, title: str, snippet: str = None) -> bool:
+        """
+        Whether the company is actually named in the text we were given.
+
+        Deliberately generous: it accepts the distinctive part of the name
+        ("CMC RAVENNA SPA" -> "cmc" + "ravenna"), because an article rarely
+        repeats the full legal form. It answers "is this name here at all",
+        not "is this article about the company" - that judgement is the
+        classifier's.
+        """
+        import re as _re
+
+        haystack = _re.sub(r"\W+", " ", f"{title or ''} {snippet or ''}").lower()
+        words = [
+            w for w in _re.sub(r"\W+", " ", (company_name or "").lower()).split()
+            if w and w not in cls._LEGAL_FORMS and len(w) > 2
+        ]
+        if not words:
+            return False
+
+        # Every distinctive word must be present: "CMC" alone matching an
+        # article about some other CMC is exactly the false positive we're
+        # trying to catch.
+        return all(f" {w} " in f" {haystack} " for w in words)
+
     @staticmethod
     def fallback_result(title: str, why: str, action: str) -> Dict[str, Any]:
         """
@@ -127,6 +161,16 @@ class NewsClassifier:
         if not article_text:
             article_text = "(Snippet non disponibile)"
 
+        # Google News quietly relaxes a quoted query when it has few hits,
+        # so it returns articles that never mention the company at all.
+        # Whether the name literally appears is a cheap, factual signal:
+        # give it to the model rather than making it guess.
+        mention = self.name_appears(company_name, title, article_text)
+        mention_note = (
+            f"Il nome del cliente compare nel titolo o nello snippet: "
+            f"{'SI' if mention else 'NO'}."
+        )
+
         if not self.client:
             return self.fallback_result(
                 title,
@@ -167,11 +211,19 @@ URL: {url}
 Snippet/estratto disponibile (non l'articolo completo):
 {article_text}
 
+{mention_note}
+
 Prima di tutto valuta se la notizia riguarda davvero QUESTO cliente specifico
 (usa nome, sito web, settore come riferimento) e non un'altra azienda con
 nome simile o omonimo: se ci sono dubbi, abbassa fortemente confidence_score.
 
+ATTENZIONE: il motore di ricerca restituisce spesso articoli che NON parlano
+affatto del cliente (allarga la query da solo quando trova pochi risultati).
+Un articolo di cronaca locale o di settore che non nomina mai il cliente NON
+e' una notizia su di lui, anche se il tema e' affine al suo settore.
+
 Restituisci un JSON con:
+- is_about_company (true/false: l'articolo parla davvero di questo cliente?)
 - summary (breve sintesi della notizia, max 200 caratteri)
 - category (una tra: {', '.join(self.CATEGORIES)})
 - relevance_score (1-10: quanto è rilevante per il cliente)
@@ -185,6 +237,9 @@ Restituisci un JSON con:
 
 Regole:
 - Non inventare informazioni oltre a quanto fornito nello snippet
+- Se l'articolo non parla del cliente, metti is_about_company=false,
+  relevance_score=1 e confidence_score=1: non cercare un collegamento
+  indiretto per giustificarlo
 - Se la notizia è poco pertinente, assegna relevance_score basso (1-3)
 - Se il cliente non è citato chiaramente o potrebbe essere un omonimo, abbassa confidence_score (1-3)
 - Se il contenuto completo non è disponibile, non inventare la sintesi

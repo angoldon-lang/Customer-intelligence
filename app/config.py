@@ -100,6 +100,16 @@ class Settings:
     DEFAULT_COMPANY_STATUS: str = os.getenv("DEFAULT_COMPANY_STATUS", "Attiva")
     MIN_RELEVANCE_SCORE: int = int(os.getenv("MIN_RELEVANCE_SCORE", "5"))
 
+    # Google News relaxes a quoted query when it finds few hits, so it
+    # returns articles that never mention the company. When the classifier
+    # says an article isn't about the company, park it as "Rifiutata"
+    # instead of letting it into the flow: still visible and recoverable,
+    # but out of the reports. Set False to keep the old behaviour.
+    AUTO_REJECT_OFF_TOPIC: bool = os.getenv("AUTO_REJECT_OFF_TOPIC", "True").lower() == "true"
+    # Confidence at or below this counts as "not about this company".
+    # Confidence 1 is reserved for "not classified at all" and is excluded.
+    MIN_CONFIDENCE_SCORE: int = int(os.getenv("MIN_CONFIDENCE_SCORE", "3"))
+
     # Dashboard
     DASHBOARD_ITEMS_PER_PAGE: int = int(os.getenv("DASHBOARD_ITEMS_PER_PAGE", "20"))
 

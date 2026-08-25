@@ -217,6 +217,29 @@ class NewsSearcher:
 
         return news_items, provider_summary
 
+    @staticmethod
+    def is_off_topic(classification: Dict[str, Any]) -> bool:
+        """
+        Whether the classifier decided the article isn't about the company.
+
+        Two signals, both from the classifier itself: the explicit verdict,
+        and a confidence score at or below the configured floor. Kept off by
+        setting AUTO_REJECT_OFF_TOPIC=False.
+        """
+        if not settings.AUTO_REJECT_OFF_TOPIC:
+            return False
+
+        if classification.get("is_about_company") is False:
+            return True
+
+        confidence = classification.get("confidence_score")
+        # confidence 1 also means "not classified at all" (see
+        # fallback_result), which is handled separately - don't reject those.
+        if isinstance(confidence, (int, float)) and 1 < confidence <= settings.MIN_CONFIDENCE_SCORE:
+            return True
+
+        return False
+
     def process_and_classify_news(
         self,
         db: Session,
@@ -225,6 +248,7 @@ class NewsSearcher:
     ) -> List[NewsItem]:
         """Deduplicate against the DB, classify with Claude, and save."""
         saved_items = []
+        off_topic = 0
 
         for news_data in news_items:
             existing = db.query(NewsItem).filter(
@@ -253,6 +277,16 @@ class NewsSearcher:
                 )
                 if classification.get("confidence_score") == 1 and not self.classifier.client:
                     item_status = "Needs Review"
+                elif self.is_off_topic(classification):
+                    # The classifier judged the article isn't about this
+                    # company - Google News relaxes quoted queries and
+                    # returns unrelated local news. Its verdict used to be
+                    # stored and ignored, so the noise landed in the flow
+                    # as if it were a real find. Park it as Rejected: still
+                    # visible under the "Rifiutate" filter, out of the
+                    # report, and removable in bulk.
+                    item_status = "Rejected"
+                    off_topic += 1
             except Exception as e:
                 print(f"[NewsSearcher] Classification failed for '{news_data['title']}': {e} - saving unclassified")
                 classification = self.classifier.fallback_result(
@@ -298,6 +332,13 @@ class NewsSearcher:
 
             saved_items.append(news_item)
 
+        if off_topic:
+            print(
+                f"[NewsSearcher] {company.company_name}: {off_topic} notizie scartate "
+                f"(non parlano dell'azienda). Le trovi con il filtro 'Rifiutate'."
+            )
+        self.last_off_topic = off_topic
+
         return saved_items
 
     def monitor_all_companies(
@@ -310,6 +351,7 @@ class NewsSearcher:
             "news_found": 0,
             "news_saved": 0,
             "news_unclassified": 0,
+            "news_off_topic": 0,
             "classification_disabled_reason": None,
             "errors": []
         }
@@ -352,6 +394,7 @@ class NewsSearcher:
                     result["news_unclassified"] += sum(
                         1 for n in saved if n.status == "Needs Review"
                     )
+                    result["news_off_topic"] += getattr(self, "last_off_topic", 0)
                     log_status = "found"
                 else:
                     log_status = self._classify_no_results(provider_summary)
