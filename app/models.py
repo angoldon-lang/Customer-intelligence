@@ -102,6 +102,11 @@ class NewsItem(Base):
     url = Column(String(500), nullable=False, unique=True)
     published_date = Column(DateTime)
     summary = Column(Text)
+    # The classifier produces both of these on every article; they used to
+    # be computed, paid for and thrown away. They are the two sentences a
+    # report actually needs next to the headline.
+    why_it_matters = Column(Text)
+    suggested_action = Column(Text)
     category = Column(String(50))  # Investment, M&A, Financial, Management, Cybersecurity, etc.
     relevance_score = Column(Float, default=0)  # 1-10
     urgency_score = Column(Float, default=0)   # 1-10

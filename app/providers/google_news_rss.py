@@ -341,6 +341,12 @@ class GoogleNewsRSSProvider(NewsSourceProvider):
             query = re.sub(r"\s+-\s+[^-]+$", "", title).strip() or title
             return "https://www.google.com/search?q=" + quote_plus(query)
 
+        # No title to search on. Returning the /rss/ link would hand back a
+        # URL we know opens raw XML ("Questo feed non e' disponibile"), so
+        # send the reader to Google News rather than to a dead end.
+        if "/rss/" in url:
+            return "https://news.google.com/"
+
         return url
 
     @staticmethod

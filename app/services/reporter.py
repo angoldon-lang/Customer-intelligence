@@ -1,6 +1,7 @@
 """Report generation service."""
 
 from datetime import datetime
+from html import escape
 from typing import List, Dict, Any
 from sqlalchemy.orm import Session
 from app.models import NewsItem, Report, Cluster
@@ -87,7 +88,17 @@ class ReportGenerator:
                 body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
                 .header {{ background-color: #2c3e50; color: white; padding: 20px; margin-bottom: 20px; }}
                 .section {{ margin-bottom: 30px; }}
-                .news-item {{ border-left: 4px solid #3498db; padding-left: 15px; margin-bottom: 15px; }}
+                .news-item {{ border-left: 4px solid #3498db; padding-left: 15px; margin-bottom: 26px; }}
+                .news-item h3 {{ margin: 0 0 6px 0; line-height: 1.35; }}
+                .news-item h3 a {{ color: #2c3e50; }}
+                .meta {{ margin: 0 0 10px 0; color: #7f8c8d; font-size: 13px; }}
+                .summary {{ margin: 0 0 12px 0; color: #444; line-height: 1.55; }}
+                .read-more {{
+                    display: inline-block; margin-bottom: 12px; padding: 8px 14px;
+                    background-color: #3498db; color: #ffffff !important;
+                    border-radius: 4px; font-size: 14px; font-weight: bold;
+                    text-decoration: none;
+                }}
                 .score {{ display: inline-block; background-color: #ecf0f1; padding: 5px 10px; margin-right: 10px; border-radius: 3px; }}
                 .high {{ color: #e74c3c; }}
                 .medium {{ color: #f39c12; }}
@@ -116,13 +127,33 @@ class ReportGenerator:
 
             for idx, news in enumerate(news_items, 1):
                 impact_class = "high" if news.relevance_score >= 8 else "medium" if news.relevance_score >= 6 else "low"
+                link = self.article_link(news)
+                published = news.published_date.strftime('%d/%m/%Y') if news.published_date else 'N/A'
+
+                # Everything below comes from third-party feeds and from the
+                # model: escape it, or a stray "<" in a headline breaks the
+                # email body (or worse, injects markup into it).
+                # quote=False for text nodes: only <, > and & need escaping
+                # there, and escaping apostrophes would litter Italian prose
+                # with &#x27;. Attribute values below use the full escape.
+                title = escape(news.title or "", quote=False)
+                company = escape(news.company.company_name if news.company else "-", quote=False)
+                category = escape(news.category or "-", quote=False)
+                source = escape(news.source_name or "-", quote=False)
+
+                body = self.article_text(news)
+                body_html = f'<p class="summary">{escape(body, quote=False)}</p>' if body else ""
+
                 html += f"""
                 <div class="news-item">
-                    <h3>{idx}. {news.title}</h3>
-                    <p><strong>Azienda:</strong> {news.company.company_name}</p>
-                    <p><strong>Categoria:</strong> {news.category}</p>
-                    <p><strong>Data:</strong> {news.published_date.strftime('%d/%m/%Y') if news.published_date else 'N/A'}</p>
-                    <p><strong>Fonte:</strong> <a href="{news.url}">{news.source_name}</a></p>
+                    <h3>{idx}. <a href="{escape(link, quote=True)}">{title}</a></h3>
+                    <p class="meta">
+                        <strong>{company}</strong> &middot; {source} &middot; {published} &middot; {category}
+                    </p>
+
+                    {body_html}
+
+                    <p><a class="read-more" href="{escape(link, quote=True)}">Leggi l'articolo &rarr;</a></p>
 
                     <div>
                         <span class="score">Rilevanza: <strong class="{impact_class}">{news.relevance_score:.1f}/10</strong></span>
@@ -130,8 +161,6 @@ class ReportGenerator:
                         <span class="score">Opportunità: <strong>{news.commercial_score:.1f}/10</strong></span>
                         <span class="score">Rischio: <strong>{news.risk_score:.1f}/10</strong></span>
                     </div>
-
-                    <p><em>{news.summary}</em></p>
                 </div>
                 """
 
@@ -151,6 +180,45 @@ class ReportGenerator:
         """
 
         return html
+
+    @staticmethod
+    def article_link(news: NewsItem) -> str:
+        """
+        A link the reader can actually open.
+
+        Google News article ids are increasingly opaque blobs that hold no
+        publisher URL, and the /rss/ path they sit on serves raw XML
+        ("Questo feed non e' disponibile") rather than redirecting. Rows
+        saved before this was handled still carry those links, so resolve
+        them here too instead of trusting what's stored.
+        """
+        from app.providers.google_news_rss import GoogleNewsRSSProvider
+
+        return GoogleNewsRSSProvider.normalize_article_url(news.url, news.title)
+
+    @staticmethod
+    def article_text(news: NewsItem, max_chars: int = 320) -> str:
+        """
+        The two or three lines that go under the headline.
+
+        Prefers the article's own summary and adds the classifier's reading
+        of why it matters - which is the sentence that makes a report worth
+        opening. Falls back gracefully: many Google News entries carry no
+        usable description at all.
+        """
+        parts = []
+        for value in (news.summary, news.why_it_matters):
+            text = " ".join((value or "").split())
+            # Skip the placeholder the fallback classification writes in.
+            if not text or text.lower().startswith("classificazione ai"):
+                continue
+            if text not in parts:
+                parts.append(text)
+
+        body = " ".join(parts)
+        if len(body) > max_chars:
+            body = body[:max_chars].rsplit(" ", 1)[0] + "..."
+        return body
 
     def _generate_text_report(
         self,
@@ -180,21 +248,23 @@ Nel periodo considerato sono state trovate {len(news_items)} notizie che superan
             text += "NOTIZIE PRINCIPALI\n" + "=" * 50 + "\n\n"
 
             for idx, news in enumerate(news_items, 1):
+                body = self.article_text(news)
+                published = news.published_date.strftime('%d/%m/%Y') if news.published_date else 'N/A'
+                company = news.company.company_name if news.company else '-'
+
                 text += f"""{idx}. {news.title}
 
-Azienda: {news.company.company_name}
-Categoria: {news.category}
-Data: {news.published_date.strftime('%d/%m/%Y') if news.published_date else 'N/A'}
-Fonte: {news.source_name}
-Link: {news.url}
+{company} · {news.source_name} · {published} · {news.category}
+"""
+                if body:
+                    text += f"\n{body}\n"
 
-Punteggi:
-- Rilevanza: {news.relevance_score:.1f}/10
-- Urgenza: {news.urgency_score:.1f}/10
-- Opportunità: {news.commercial_score:.1f}/10
-- Rischio: {news.risk_score:.1f}/10
+                # Resolved the same way as the HTML version: the stored URL
+                # may still be a Google News /rss/ link that serves XML.
+                text += f"""
+Leggi l'articolo: {self.article_link(news)}
 
-Sintesi: {news.summary}
+Punteggi: rilevanza {news.relevance_score:.1f}/10 · urgenza {news.urgency_score:.1f}/10 · opportunità {news.commercial_score:.1f}/10 · rischio {news.risk_score:.1f}/10
 
 """
 

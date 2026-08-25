@@ -4,6 +4,32 @@ Tutte le modifiche rilevanti a questo progetto sono documentate in questo file.
 Il formato segue [Keep a Changelog](https://keepachangelog.com/) e il progetto
 usa [Semantic Versioning](https://semver.org/lang/it/).
 
+## [0.14.0] - 2026-08-25
+
+### Fixed
+- **Il link nel report portava a una pagina XML.** Gli id degli articoli di
+  Google News sono sempre piu' spesso blob opachi che non contengono l'URL
+  dell'editore, e il percorso `/rss/` su cui stanno serve XML grezzo
+  ("Questo feed non e' disponibile") invece di reindirizzare. Il decoder
+  faceva bene a fallire, ma senza titolo restituiva comunque il link rotto:
+  meglio nessun link che uno che si sa non funzionare. Ora il report
+  risolve il link **al momento della generazione**, quindi funziona anche
+  per le notizie salvate prima della correzione, senza dover lanciare la
+  manutenzione.
+- **Titoli e testi non venivano messi in sicurezza nella mail**: arrivano
+  da feed di terze parti e finivano nell'HTML cosi' com'erano.
+
+### Added
+- **Link evidente nella mail**: il titolo e' cliccabile e sotto c'e' un
+  pulsante "Leggi l'articolo →". Prima l'unico link era il nome della fonte
+  in piccolo.
+- **Due o tre righe di testo sotto ogni titolo**, con la sintesi
+  dell'articolo e il "perche' e' importante" del classificatore.
+- `why_it_matters` e `suggested_action` ora vengono **salvati**: il
+  classificatore li produceva a ogni notizia e venivano scartati. Il
+  "perche' e' importante" compare anche nella card della pagina Notizie.
+  La colonna viene aggiunta al database automaticamente all'avvio.
+
 ## [0.13.0] - 2026-08-25
 
 ### Fixed

@@ -303,6 +303,8 @@ class NewsSearcher:
                 source_name=news_data["source_name"],
                 source_type=news_data.get("source_type"),
                 summary=classification.get("summary") or news_data.get("summary"),
+                why_it_matters=classification.get("why_it_matters"),
+                suggested_action=classification.get("suggested_action"),
                 published_date=news_data.get("published_date"),
                 category=classification.get("category", "Other"),
                 relevance_score=classification.get("relevance_score", 5),

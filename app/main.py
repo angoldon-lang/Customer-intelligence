@@ -792,8 +792,13 @@ def list_news(
                 "category": n.category,
                 # url was missing here, so every "Leggi"/source link in the
                 # news page rendered as undefined
-                "url": n.url,
+                # Resolved rather than raw: a Google News /rss/ link opens
+                # as XML instead of the article, and older rows still hold
+                # those.
+                "url": ReportGenerator.article_link(n),
                 "summary": n.summary,
+                "why_it_matters": n.why_it_matters,
+                "suggested_action": n.suggested_action,
                 "published_date": n.published_date.isoformat() if n.published_date else None,
                 "relevance_score": n.relevance_score,
                 "confidence_score": n.confidence_score,

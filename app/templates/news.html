@@ -240,6 +240,7 @@
                         const summary = cleanSummary(n.summary, n.title);
                         return summary ? `<p class="news-card__summary">${escapeHtml(summary)}</p>` : '';
                     })()}
+                    ${n.why_it_matters ? `<p class="news-card__why">💡 ${escapeHtml(n.why_it_matters)}</p>` : ''}
 
                     <div class="news-card__tags">
                         <span class="badge ${statusBadges[n.status] || 'badge-primary'}">${statusLabels[n.status] || n.status}</span>
