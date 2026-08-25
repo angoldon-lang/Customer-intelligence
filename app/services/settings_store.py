@@ -31,6 +31,17 @@ KNOWN_SETTINGS = {
     "MIN_RELEVANCE_SCORE": ("MIN_RELEVANCE_SCORE", int),
     "CLASSIFIER_MODE": ("CLASSIFIER_MODE", str),
     "CLAUDE_MODEL": ("CLAUDE_MODEL", str),
+    # News sources: which ones to use and in what order.
+    "GOOGLE_NEWS_RSS_ENABLED": ("GOOGLE_NEWS_RSS_ENABLED", _as_bool),
+    "GDELT_ENABLED": ("GDELT_ENABLED", _as_bool),
+    "RSS_ENABLED": ("RSS_ENABLED", _as_bool),
+    "APITUBE_FALLBACK_ONLY": ("APITUBE_FALLBACK_ONLY", _as_bool),
+    "APITUBE_MAX_REQUESTS_PER_RUN": ("APITUBE_MAX_REQUESTS_PER_RUN", int),
+    "PROVIDER_ORDER": ("PROVIDER_ORDER", str),
+    # Scheduler state, so it survives a restart.
+    "SCHEDULER_ENABLED": ("SCHEDULER_ENABLED", _as_bool),
+    "SCHEDULER_CHECK_INTERVAL_HOURS": ("SCHEDULER_CHECK_INTERVAL_HOURS", int),
+    "MAX_COMPANIES_PER_RUN": ("MAX_COMPANIES_PER_RUN", int),
     "ADMIN_USERNAME": ("ADMIN_USERNAME", str),
     "ADMIN_PASSWORD_HASH": (None, str),
     "SESSION_SECRET": (None, str),

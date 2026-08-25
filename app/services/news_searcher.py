@@ -45,32 +45,37 @@ class NewsSearcher:
             return HeuristicClassifier()
         return NewsClassifier()
 
-    def _build_providers(self, db: Session) -> List[NewsSourceProvider]:
-        """Build the provider list for one monitoring run."""
-        providers: List[NewsSourceProvider] = []
+    # Source key -> how to build it. The key is what the user sees and
+    # reorders in Impostazioni.
+    PROVIDER_KEYS = ("google_news_rss", "gdelt", "gnews", "rss", "apitube")
 
-        # Google News RSS first: best coverage for small/local Italian
-        # companies, which GDELT/GNews often don't index at all.
+    def _build_providers(self, db: Session) -> List[NewsSourceProvider]:
+        """
+        Build the provider list for one monitoring run.
+
+        Which sources run, and in what order, comes from Impostazioni
+        (PROVIDER_ORDER + the per-source switches) rather than being fixed
+        in code: on some company lists the official RSS feeds are worth
+        asking before Google News, on others the opposite.
+        """
+        available = {}
+
         if settings.GOOGLE_NEWS_RSS_ENABLED:
-            providers.append(GoogleNewsRSSProvider())
+            available["google_news_rss"] = GoogleNewsRSSProvider
 
         if settings.GDELT_ENABLED:
-            providers.append(GDELTProvider())
+            available["gdelt"] = GDELTProvider
 
         if settings.GNEWS_API_KEY:
-            providers.append(GNewsProvider())
+            available["gnews"] = GNewsProvider
 
         if settings.RSS_ENABLED:
-            rss = RSSProvider(db)
-            rss.refresh()
-            providers.append(rss)
+            available["rss"] = lambda: self._build_rss(db)
 
-        # Last on purpose: it's paid and metered, so it only gets asked
-        # about companies the free sources above found nothing for.
         if settings.APITUBE_API_KEY:
-            apitube = APITubeProvider()
-            apitube.fallback_only = settings.APITUBE_FALLBACK_ONLY
-            providers.append(apitube)
+            available["apitube"] = self._build_apitube
+
+        providers = [available[key]() for key in self.provider_order() if key in available]
 
         if not providers:
             # Nothing configured (no network / no keys) - fall back to
@@ -78,6 +83,32 @@ class NewsSearcher:
             providers.append(TestNewsProvider())
 
         return providers
+
+    @classmethod
+    def provider_order(cls) -> List[str]:
+        """Configured order, with any source missing from it appended."""
+        configured = [
+            key.strip()
+            for key in (settings.PROVIDER_ORDER or "").split(",")
+            if key.strip() in cls.PROVIDER_KEYS
+        ]
+        # A source left out of the setting must still run, just last -
+        # otherwise adding a provider would silently disable it.
+        return configured + [key for key in cls.PROVIDER_KEYS if key not in configured]
+
+    @staticmethod
+    def _build_rss(db: Session) -> NewsSourceProvider:
+        rss = RSSProvider(db)
+        rss.refresh()
+        return rss
+
+    @staticmethod
+    def _build_apitube() -> NewsSourceProvider:
+        apitube = APITubeProvider()
+        # Paid and metered: by default only asked about companies the free
+        # sources found nothing for, wherever it sits in the order.
+        apitube.fallback_only = settings.APITUBE_FALLBACK_ONLY
+        return apitube
 
     @staticmethod
     def is_ambiguous(company: Company) -> bool:

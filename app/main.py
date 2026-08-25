@@ -90,6 +90,14 @@ def on_startup():
     finally:
         db.close()
 
+    # Restart the scheduler by itself when it was left on. Without this,
+    # "avvia scheduler" only lasted until the next server restart, so the
+    # monitoring quietly stopped running.
+    if settings.SCHEDULER_ENABLED:
+        hours = settings.SCHEDULER_CHECK_INTERVAL_HOURS
+        monitoring_scheduler.start(hours)
+        print(f"Scheduler ripristinato dalle impostazioni: ogni {hours} ore")
+
 
 @app.on_event("shutdown")
 def on_shutdown():
@@ -517,6 +525,21 @@ def get_search_coverage(status: str = None, search: str = None, db: Session = De
         .all()
     )
 
+    # Waiting for a decision: these are what the quick-approve action on
+    # this page acts on, and what holds the weekly report back.
+    pending_counts = dict(
+        db.query(NewsItem.company_id, func.count(NewsItem.id))
+        .filter(NewsItem.status.in_(["New", "Needs Review"]))
+        .group_by(NewsItem.company_id)
+        .all()
+    )
+    approved_counts = dict(
+        db.query(NewsItem.company_id, func.count(NewsItem.id))
+        .filter(NewsItem.status == "Approved")
+        .group_by(NewsItem.company_id)
+        .all()
+    )
+
     coverage = []
     for c in companies:
         log = logs_by_company.get(c.id)
@@ -530,6 +553,8 @@ def get_search_coverage(status: str = None, search: str = None, db: Session = De
             "status": row_status,
             "articles_found": log.articles_found if log else 0,
             "news_in_archive": stored_counts.get(c.id, 0),
+            "news_pending": pending_counts.get(c.id, 0),
+            "news_approved": approved_counts.get(c.id, 0),
             "providers_detail": log.providers_detail if log else None,
             "error_message": log.error_message if log else None,
         })
@@ -1041,25 +1066,47 @@ def get_report(report_id: int, db: Session = Depends(get_db)):
 
 @app.post("/api/monitoring/start")
 def start_monitoring(
-    interval_hours: int = 24,
+    interval_hours: int = None,
     db: Session = Depends(get_db)
 ):
-    """Start automatic news monitoring."""
-    monitoring_scheduler.start(interval_hours)
+    """
+    Start automatic news monitoring.
+
+    The choice is remembered, so the scheduler comes back up on its own
+    after a restart and doesn't have to be switched on again each time.
+    """
+    # `is None`, not a truthiness check: 0 is invalid input that must be
+    # refused, not quietly replaced by the default.
+    hours = interval_hours if interval_hours is not None else (
+        settings.SCHEDULER_CHECK_INTERVAL_HOURS or 24
+    )
+    if hours < 1:
+        raise HTTPException(status_code=400, detail="L'intervallo minimo e' 1 ora")
+    if hours > 168:
+        raise HTTPException(status_code=400, detail="L'intervallo massimo e' 168 ore (una settimana)")
+
+    settings_store.save_settings(db, {
+        "SCHEDULER_ENABLED": True,
+        "SCHEDULER_CHECK_INTERVAL_HOURS": hours,
+    })
+    monitoring_scheduler.start(hours)
+
     return {
         "status": "started",
-        "interval_hours": interval_hours,
-        "message": "News monitoring started"
+        "interval_hours": hours,
+        "next_run_at": monitoring_scheduler.next_run_at(),
+        "message": f"Monitoraggio automatico attivo ogni {hours} ore",
     }
 
 
 @app.post("/api/monitoring/stop")
-def stop_monitoring():
-    """Stop automatic news monitoring."""
+def stop_monitoring(db: Session = Depends(get_db)):
+    """Stop automatic news monitoring (and remember it's off)."""
+    settings_store.save_settings(db, {"SCHEDULER_ENABLED": False})
     monitoring_scheduler.stop()
     return {
         "status": "stopped",
-        "message": "News monitoring stopped"
+        "message": "Monitoraggio automatico disattivato",
     }
 
 
@@ -1090,6 +1137,7 @@ def get_monitoring_status(db: Session = Depends(get_db)):
     return {
         "is_running": monitoring_scheduler.is_running,
         "interval_hours": monitoring_scheduler.interval_hours,
+        "next_run_at": monitoring_scheduler.next_run_at(),
         "run_in_progress": monitoring_scheduler.run_in_progress,
         "classification_issue": monitoring_scheduler.last_classification_issue,
         "last_run": {
@@ -1122,21 +1170,237 @@ def get_monitoring_history(limit: int = 10, db: Session = Depends(get_db)):
     }
 
 
+PROVIDER_LABELS = {
+    "google_news_rss": ("Google News RSS", "Gratuito, nessuna chiave. In genere la copertura migliore per le piccole aziende italiane."),
+    "rss": ("Fonti ufficiali RSS", "Comunicati e investor relations dal sito dell'azienda: la fonte piu' affidabile."),
+    "gdelt": ("GDELT", "Gratuito, nessuna chiave. Copertura ampia ma senza snippet."),
+    "gnews": ("GNews.io", "Richiede GNEWS_API_KEY. Aggiunge descrizioni agli articoli."),
+    "apitube": ("APITube", "A pagamento, a consumo. Articoli arricchiti: la fonte per la rassegna stampa."),
+}
+
+
 @app.get("/api/monitoring/providers")
 def get_providers_status(db: Session = Depends(get_db)):
-    """Report which news providers are active, for the settings page."""
+    """
+    News sources with their state and search order, for the settings page.
+
+    Returned in the order they are actually queried, so the settings list
+    matches what the monitoring does.
+    """
     rss_count = db.query(NewsSource).filter_by(source_type="rss", enabled=True).count()
-    return {
-        "google_news_rss": {"enabled": settings.GOOGLE_NEWS_RSS_ENABLED, "requires_key": False},
-        "gdelt": {"enabled": settings.GDELT_ENABLED, "requires_key": False},
-        "gnews": {"enabled": bool(settings.GNEWS_API_KEY), "requires_key": True},
-        "rss": {"enabled": settings.RSS_ENABLED and rss_count > 0, "active_feeds": rss_count},
+
+    state = {
+        "google_news_rss": {
+            "enabled": settings.GOOGLE_NEWS_RSS_ENABLED,
+            "requires_key": False, "configurable": True,
+        },
+        "gdelt": {
+            "enabled": settings.GDELT_ENABLED,
+            "requires_key": False, "configurable": True,
+        },
+        "gnews": {
+            "enabled": bool(settings.GNEWS_API_KEY),
+            "requires_key": True, "configurable": False,
+            "note": None if settings.GNEWS_API_KEY else "manca GNEWS_API_KEY nel .env",
+        },
+        "rss": {
+            "enabled": settings.RSS_ENABLED,
+            "requires_key": False, "configurable": True,
+            "active_feeds": rss_count,
+            "note": None if rss_count else "nessun feed configurato qui sotto",
+        },
         "apitube": {
             "enabled": bool(settings.APITUBE_API_KEY),
-            "requires_key": True,
+            "requires_key": True, "configurable": False,
             "fallback_only": settings.APITUBE_FALLBACK_ONLY,
             "max_requests_per_run": settings.APITUBE_MAX_REQUESTS_PER_RUN,
+            "note": None if settings.APITUBE_API_KEY else "manca APITUBE_API_KEY nel .env",
         },
+    }
+
+    order = NewsSearcher.provider_order()
+    providers = []
+    for position, key in enumerate(order, start=1):
+        label, description = PROVIDER_LABELS.get(key, (key, ""))
+        providers.append({
+            "key": key, "name": label, "description": description,
+            "position": position, **state.get(key, {}),
+        })
+
+    # Keep the flat keys too: older callers (and the tests) read them.
+    return {"providers": providers, "order": order, **state}
+
+
+@app.post("/api/monitoring/providers/order")
+def set_provider_order(payload: dict = Body(...), db: Session = Depends(get_db)):
+    """Set the order the news sources are queried in."""
+    order = payload.get("order") or []
+    valid = [key for key in order if key in NewsSearcher.PROVIDER_KEYS]
+
+    if not valid:
+        raise HTTPException(status_code=400, detail="Nessuna fonte valida nell'ordine indicato")
+
+    settings_store.save_settings(db, {"PROVIDER_ORDER": ",".join(valid)})
+    return {"order": NewsSearcher.provider_order(), "message": "Ordine delle fonti aggiornato"}
+
+
+@app.get("/api/workflow/status")
+def get_workflow_status(db: Session = Depends(get_db)):
+    """
+    Everything the weekly automation needs, and what's still missing.
+
+    Answers one question: "if I do nothing else, will a report reach my
+    recipients next week?" Each step reports whether it's done and, when it
+    isn't, what to do about it.
+    """
+    from app.services.report_scheduler import cluster_is_due
+
+    pending_news = db.query(NewsItem).filter(
+        NewsItem.status.in_(["New", "Needs Review"])
+    ).count()
+    approved_news = db.query(NewsItem).filter_by(status="Approved").count()
+
+    active_companies = db.query(Company).filter_by(status="Attiva").count()
+    clustered_ids = {row[0] for row in db.query(CompanyCluster.company_id).distinct()}
+    unclustered = (
+        db.query(Company)
+        .filter(Company.status == "Attiva", ~Company.id.in_(clustered_ids or {0}))
+        .count()
+    )
+
+    active_clusters = db.query(Cluster).filter_by(active=True).all()
+    clusters_without_recipients = [
+        c.cluster_name for c in active_clusters
+        if not any(r.email and r.active for r in c.recipients)
+    ]
+
+    sender = EmailSender(db)
+    smtp_problem = sender.config_problem()
+
+    due_now = sum(
+        1 for c in active_clusters
+        if c.active and any(r.email and r.active for r in c.recipients)
+        and cluster_is_due(db, c)
+    )
+
+    steps = [
+        {
+            "key": "companies",
+            "title": "Aziende da monitorare",
+            "done": active_companies > 0,
+            "detail": f"{active_companies} aziende attive",
+            "todo": "Importa l'anagrafica dalla pagina Import.",
+            "link": "/upload",
+        },
+        {
+            "key": "scheduler",
+            "title": "Ricerca automatica attiva",
+            "done": monitoring_scheduler.is_running,
+            "detail": (
+                f"Attiva ogni {monitoring_scheduler.interval_hours} ore"
+                if monitoring_scheduler.is_running else "Non attiva"
+            ),
+            "todo": "Avvia lo scheduler in Impostazioni: senza, le notizie non si aggiornano da sole.",
+            "link": "/settings",
+        },
+        {
+            "key": "news",
+            "title": "Notizie da approvare",
+            "done": pending_news == 0,
+            "detail": (
+                f"{pending_news} in attesa, {approved_news} approvate"
+                if pending_news else f"{approved_news} approvate, nessuna in attesa"
+            ),
+            "todo": "Approva o rifiuta le notizie in attesa: solo le approvate entrano nel report.",
+            "link": "/news?status=New",
+            "count": pending_news,
+        },
+        {
+            "key": "clusters",
+            "title": "Aziende assegnate a un cluster",
+            "done": unclustered == 0 and active_companies > 0,
+            "detail": (
+                "Nessuna azienda attiva da assegnare" if not active_companies
+                else f"{unclustered} aziende attive senza cluster" if unclustered
+                else "Tutte le aziende attive sono in un cluster"
+            ),
+            "todo": "Un'azienda fuori da ogni cluster non finisce in nessun report.",
+            "link": "/clusters",
+            "count": unclustered,
+        },
+        {
+            "key": "recipients",
+            "title": "Destinatari configurati",
+            "done": bool(active_clusters) and not clusters_without_recipients,
+            "detail": (
+                f"Cluster senza destinatari: {', '.join(clusters_without_recipients)}"
+                if clusters_without_recipients
+                else (f"{len(active_clusters)} cluster con destinatari" if active_clusters
+                      else "Nessun cluster attivo")
+            ),
+            "todo": "Aggiungi un destinatario a ogni cluster attivo, altrimenti il report non viene inviato.",
+            "link": "/clusters",
+            "count": len(clusters_without_recipients),
+        },
+        {
+            "key": "smtp",
+            "title": "Invio email configurato",
+            "done": smtp_problem is None,
+            "detail": smtp_problem or "Configurazione SMTP completa",
+            "todo": "Completa la configurazione email e usa Test SMTP per verificarla.",
+            "link": "/settings",
+        },
+    ]
+
+    missing = [s for s in steps if not s["done"]]
+    return {
+        "ready": not missing,
+        "steps": steps,
+        "missing_count": len(missing),
+        "clusters_due_now": due_now,
+        "summary": (
+            "Il flusso settimanale e' completo: le notizie vengono cercate, "
+            "approvate e inviate ai destinatari."
+            if not missing else
+            f"{len(missing)} passaggi da completare perche' il flusso giri da solo."
+        ),
+    }
+
+
+@app.post("/api/workflow/approve-company/{company_id}")
+def approve_company_news(
+    company_id: int,
+    min_relevance: int = 0,
+    db: Session = Depends(get_db),
+):
+    """
+    Approve every pending news item for one company, in one click.
+
+    The quick path from Copertura ricerca: you've just seen that a company
+    has results, and you want them in the next report without opening the
+    news page and ticking them one by one.
+    """
+    company = db.query(Company).filter_by(id=company_id).first()
+    if not company:
+        raise HTTPException(status_code=404, detail="Azienda non trovata")
+
+    query = db.query(NewsItem).filter(
+        NewsItem.company_id == company_id,
+        NewsItem.status.in_(["New", "Needs Review"]),
+    )
+    if min_relevance:
+        query = query.filter(NewsItem.relevance_score >= min_relevance)
+
+    updated = query.update({NewsItem.status: "Approved"}, synchronize_session=False)
+    db.commit()
+
+    return {
+        "updated": updated,
+        "company": company.company_name,
+        "message": (
+            f"{updated} notizie approvate per {company.company_name}"
+            if updated else f"Nessuna notizia in attesa per {company.company_name}"
+        ),
     }
 
 

@@ -117,6 +117,15 @@ class MonitoringScheduler:
         self.interval_hours = interval_hours
         print(f"Monitoring scheduler started (interval: {interval_hours}h)")
 
+    def next_run_at(self) -> str:
+        """When the next automatic run is due, ISO format, or None."""
+        if not self.is_running:
+            return None
+        job = self.scheduler.get_job('news_monitoring')
+        if not job or not job.next_run_time:
+            return None
+        return job.next_run_time.isoformat()
+
     def stop(self):
         """Stop the monitoring scheduler."""
         if self.scheduler.running:

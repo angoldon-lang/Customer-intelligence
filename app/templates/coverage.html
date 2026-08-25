@@ -8,6 +8,20 @@
     <p>Per ogni azienda: quando è stata cercata l'ultima volta, con quali fonti, e cosa è stato trovato (o perché no)</p>
 </div>
 
+<div class="card" id="workflow-card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+        <h3 style="margin: 0;">🧭 Flusso settimanale</h3>
+        <button type="button" class="btn btn-sm btn-primary" onclick="loadWorkflow()">↻ Ricontrolla</button>
+    </div>
+    <p style="color: #7f8c8d; font-size: 13px; margin-bottom: 14px;">
+        Cosa manca perché ogni settimana il sistema cerchi, classifichi e invii da solo il report.
+    </p>
+    <div id="workflow-summary" style="padding: 12px; border-radius: 4px; margin-bottom: 14px; background: #eaf4fb; color: #1b4f72;">
+        Verifica in corso...
+    </div>
+    <div id="workflow-steps"></div>
+</div>
+
 <div class="card">
     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px;">
         <div>
@@ -45,6 +59,7 @@
                 <th>Ultima ricerca</th>
                 <th>Stato</th>
                 <th>Notizie in archivio</th>
+                <th>Da approvare</th>
                 <th>Dettaglio fonti</th>
             </tr>
         </thead>
@@ -114,12 +129,24 @@
                 ? `<a href="/news?company_id=${r.company_id}" class="btn btn-sm btn-primary">${archived} notizie →</a>`
                 : '0';
 
+            // The quick path: approve everything still waiting for this
+            // company without going through the news page one by one.
+            const pending = r.news_pending || 0;
+            const approveCell = pending > 0
+                ? `<button class="btn btn-sm btn-success" onclick="approveCompany(${r.company_id}, '${escapeAttr(r.company_name)}', ${pending})">
+                       ✓ Approva ${pending}
+                   </button>`
+                : (r.news_approved
+                    ? `<span style="color:#27ae60; font-size:12px;">${r.news_approved} approvate</span>`
+                    : '<span style="color:#bbb;">—</span>');
+
             return `
                 <tr>
                     <td><strong>${r.company_name}</strong></td>
                     <td>${lastSearched}</td>
                     <td><span class="badge ${info.badge}">${info.label}</span></td>
                     <td>${newsCell}</td>
+                    <td>${approveCell}</td>
                     <td style="font-size: 12px; color: #7f8c8d;">${detail}</td>
                 </tr>
             `;
@@ -175,7 +202,75 @@
         };
     }
 
+    function escapeAttr(value) {
+        // Company names contain apostrophes ("Ferrari S.p.A. d'Italia"),
+        // which would break out of the onclick attribute.
+        return String(value || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+    }
+
+    async function approveCompany(companyId, companyName, pending) {
+        if (!confirm(`Approvare le ${pending} notizie in attesa di "${companyName}"?\n\n`
+                   + 'Entreranno nel prossimo report del cluster a cui appartiene.')) return;
+
+        try {
+            const response = await fetch(`/api/workflow/approve-company/${companyId}`, { method: 'POST' });
+            const data = await response.json();
+
+            if (response.ok) {
+                loadCoverage();
+                loadWorkflow();
+            } else {
+                alert('Errore: ' + (data.detail || 'approvazione fallita'));
+            }
+        } catch (error) {
+            alert('Errore: ' + error.message);
+        }
+    }
+
+    async function loadWorkflow() {
+        const summary = document.getElementById('workflow-summary');
+        const stepsDiv = document.getElementById('workflow-steps');
+
+        try {
+            const response = await fetch('/api/workflow/status');
+            const data = await response.json();
+
+            if (data.ready) {
+                summary.innerHTML = '✓ ' + data.summary;
+                summary.style.background = '#d4edda';
+                summary.style.color = '#155724';
+            } else {
+                summary.innerHTML = '⚠ ' + data.summary;
+                summary.style.background = '#fff3cd';
+                summary.style.color = '#856404';
+            }
+
+            stepsDiv.innerHTML = (data.steps || []).map((step, index) => {
+                const icon = step.done ? '✓' : '○';
+                const color = step.done ? '#27ae60' : '#e67e22';
+                const action = step.done
+                    ? ''
+                    : `<a href="${step.link}" class="btn btn-sm btn-primary" style="text-decoration:none; white-space:nowrap;">Sistema →</a>`;
+
+                return `
+                    <div style="display:flex; align-items:center; gap:12px; padding:10px 0; border-bottom:1px solid #eee;">
+                        <div style="font-size:18px; color:${color}; width:20px;">${icon}</div>
+                        <div style="flex:1;">
+                            <strong style="color:${step.done ? '#2c3e50' : '#e67e22'};">${index + 1}. ${step.title}</strong><br>
+                            <small style="color:#7f8c8d;">${step.detail}</small>
+                            ${step.done ? '' : `<br><small style="color:#856404;">${step.todo}</small>`}
+                        </div>
+                        ${action}
+                    </div>
+                `;
+            }).join('');
+        } catch (error) {
+            summary.textContent = 'Impossibile verificare il flusso: ' + error.message;
+        }
+    }
+
     loadCoverage();
+    loadWorkflow();
     setInterval(loadCoverage, 60000);
 </script>
 {% endblock %}

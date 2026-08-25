@@ -83,9 +83,17 @@ class Settings:
     # are actually due, this is just a hard ceiling per run.
     MAX_COMPANIES_PER_RUN: int = int(os.getenv("MAX_COMPANIES_PER_RUN", "200"))
 
-    # Scheduler
-    SCHEDULER_ENABLED: bool = os.getenv("SCHEDULER_ENABLED", "True").lower() == "true"
+    # Scheduler. SCHEDULER_ENABLED is remembered in the database once you
+    # switch it from the dashboard, so the monitoring restarts by itself
+    # after a server restart instead of having to be turned on by hand.
+    SCHEDULER_ENABLED: bool = os.getenv("SCHEDULER_ENABLED", "False").lower() == "true"
     SCHEDULER_CHECK_INTERVAL_HOURS: int = int(os.getenv("SCHEDULER_CHECK_INTERVAL_HOURS", "24"))
+
+    # Order the news sources are queried in, first to last. Sources not
+    # listed here run last; unknown names are ignored.
+    PROVIDER_ORDER: str = os.getenv(
+        "PROVIDER_ORDER", "google_news_rss,rss,gdelt,gnews,apitube"
+    )
 
     # Default Filters
     DEFAULT_COMPANY_TYPE: str = os.getenv("DEFAULT_COMPANY_TYPE", "Cliente")

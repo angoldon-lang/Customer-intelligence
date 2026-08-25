@@ -4,6 +4,40 @@ Tutte le modifiche rilevanti a questo progetto sono documentate in questo file.
 Il formato segue [Keep a Changelog](https://keepachangelog.com/) e il progetto
 usa [Semantic Versioning](https://semver.org/lang/it/).
 
+## [0.12.0] - 2026-08-25
+
+### Added
+- **Fonti notizie gestibili da Impostazioni**: ogni fonte si attiva o
+  disattiva con un click e si riordina con ▲▼. L'ordine e' quello con cui
+  vengono effettivamente interrogate, quindi puoi mettere per prime quelle
+  che rendono di piu' sulla tua anagrafica senza toccare il `.env`
+  (`PROVIDER_ORDER`, `POST /api/monitoring/providers/order`).
+  Una fonte non elencata nell'ordine viene comunque interrogata, per ultima:
+  aggiungerne una in futuro non la disattiva per sbaglio.
+- **Guida al flusso settimanale** in Copertura ricerca
+  (`GET /api/workflow/status`): sei controlli che rispondono a una sola
+  domanda — "se non faccio altro, la settimana prossima il report parte da
+  solo?". Per ogni passaggio mancante dice cosa fare e porta alla pagina
+  giusta: aziende importate, ricerca automatica attiva, notizie da
+  approvare, aziende senza cluster, cluster senza destinatari, SMTP.
+- **Approvazione rapida per azienda** dalla Copertura
+  (`POST /api/workflow/approve-company/{id}`): un click approva tutte le
+  notizie in attesa di quell'azienda, senza aprire la pagina Notizie e
+  spuntarle una a una. La colonna "Da approvare" mostra dove serve.
+
+### Fixed
+- **Lo scheduler non sopravviveva al riavvio del server**: nulla lo
+  riavviava all'avvio, quindi "Avvia scheduler" durava fino al primo
+  riavvio e poi il monitoraggio si fermava in silenzio. Ora la scelta e'
+  salvata nel database e lo scheduler riparte da solo.
+- **L'intervallo veniva richiesto a ogni avvio** con un popup. Ora usa il
+  valore del campo "Intervallo automatico", che viene ricordato.
+- Lo stato mostra **quando e' prevista la prossima ricerca**, non solo che
+  lo scheduler e' acceso.
+- **`interval_hours=0` veniva sostituito silenziosamente con 24**: essendo
+  falsy scivolava oltre il controllo di validita'. Ora un intervallo fuori
+  scala (0, o oltre 168 ore) viene rifiutato con un messaggio.
+
 ## [0.11.0] - 2026-08-24
 
 ### Added

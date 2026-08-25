@@ -233,6 +233,43 @@ La dashboard è completamente funzionante con **8 pagine principali**:
 - **Filtri di default** aziende e notizie
 - Info sistema (versione, database, roadmap)
 
+## Far girare il flusso da solo
+
+L'obiettivo è che ogni settimana il sistema cerchi, classifichi e invii il
+report senza interventi. La pagina **Copertura ricerca** ha in cima una
+**guida al flusso settimanale** che verifica i sei requisiti e, per ognuno
+che manca, dice cosa fare e porta alla pagina giusta:
+
+1. **Aziende da monitorare** — anagrafica importata
+2. **Ricerca automatica attiva** — scheduler avviato (senza, le notizie non
+   si aggiornano da sole)
+3. **Notizie da approvare** — solo le approvate entrano nel report
+4. **Aziende assegnate a un cluster** — un'azienda fuori da ogni cluster non
+   finisce in nessun report
+5. **Destinatari configurati** — un cluster senza destinatari non invia
+6. **Invio email configurato** — SMTP funzionante
+
+Quando tutti e sei sono verdi il flusso gira da solo.
+
+### Approvazione rapida
+
+Nella tabella di Copertura, la colonna **Da approvare** mostra quante notizie
+sono in attesa per ogni azienda. Il pulsante **✓ Approva N** le approva tutte
+in un colpo, senza passare dalla pagina Notizie: è il percorso veloce dopo un
+run, quando vuoi solo confermare quello che è stato trovato.
+
+### Scheduler
+
+Si avvia da **Impostazioni → Scheduler monitoraggio**. L'intervallo è quello
+del campo "Intervallo automatico" (24 ore = una volta al giorno) e **viene
+ricordato**: lo scheduler riparte da solo anche dopo un riavvio del server,
+senza richiedere di nuovo l'intervallo. Lo stato mostra quando è prevista la
+prossima ricerca.
+
+I report seguono la frequenza del singolo cluster (vedi pagina Report), non
+quella dello scheduler: la ricerca gira ogni 24 ore, il report parte quando
+il cluster è in scadenza.
+
 ## Configurare l'invio email
 
 Si configura da **Impostazioni → Configurazione Email**, che ha i preset per
@@ -334,6 +371,19 @@ Con una chiave di prova conviene partire così e alzare
 
 Se nessun provider è configurabile/raggiungibile, il sistema usa
 `TestNewsProvider` (dati di esempio) così la pipeline resta testabile.
+
+#### Scegliere fonti e ordine di ricerca
+
+Da **Impostazioni → Fonti notizie** ogni fonte si attiva/disattiva e si
+riordina con ▲▼. L'ordine mostrato è quello con cui vengono realmente
+interrogate: conviene mettere per prime quelle che rendono di più sulla tua
+anagrafica (per aziende italiane piccole, di norma Google News RSS e i feed
+ufficiali). Le fonti che richiedono una chiave (GNews, APITube) si attivano
+aggiungendola nel `.env` e non hanno l'interruttore.
+
+L'ordine è salvato in `PROVIDER_ORDER`. Una fonte non elencata lì viene
+comunque interrogata, per ultima: aggiungerne una in futuro non la disattiva
+per dimenticanza.
 
 GDELT e Google News RSS sono gratuiti ma non hanno un vero SLA: il client
 li richiama con un ritmo minimo tra le richieste e un circuit breaker (si

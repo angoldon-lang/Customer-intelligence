@@ -120,7 +120,11 @@
 
     <div class="card">
         <h3>📡 Fonti notizie</h3>
-        <div id="providers-status" style="margin-bottom: 15px;">Caricamento stato fonti...</div>
+        <small style="color: #7f8c8d; display: block; margin-bottom: 12px;">
+            Le fonti vengono interrogate nell'ordine mostrato. Usa ▲▼ per cambiarlo:
+            metti per prime quelle che danno i risultati migliori sulla tua anagrafica.
+        </small>
+        <div id="providers-list" style="margin-bottom: 15px;">Caricamento stato fonti...</div>
 
         <h4 style="margin-top: 20px; margin-bottom: 10px;">Fonti ufficiali RSS</h4>
         <small style="color: #7f8c8d; display: block; margin-bottom: 10px;">
@@ -164,7 +168,11 @@
             <div class="form-group">
                 <label>Intervallo automatico (ore)</label>
                 <input type="number" id="check-interval" value="24" min="1" max="168">
-                <small style="color: #7f8c8d;">Quanto spesso cercare notizie automaticamente</small>
+                <small style="color: #7f8c8d;">
+                    Ogni quante ore cercare notizie. 24 = una volta al giorno.
+                    L'impostazione viene ricordata: lo scheduler riparte da solo
+                    anche dopo un riavvio del server, senza richiederla ogni volta.
+                </small>
             </div>
 
             <button type="submit" class="btn btn-success">Salva intervallo</button>
@@ -325,31 +333,104 @@
         }
     }
 
+    let providerOrder = [];
+
+    // Which .env-backed setting each source's on/off switch writes to.
+    const PROVIDER_SETTING = {
+        google_news_rss: 'GOOGLE_NEWS_RSS_ENABLED',
+        gdelt: 'GDELT_ENABLED',
+        rss: 'RSS_ENABLED',
+    };
+
     async function loadProvidersStatus() {
         try {
             const response = await fetch('/api/monitoring/providers');
             const data = await response.json();
+            const providers = data.providers || [];
+            providerOrder = data.order || [];
 
-            const badge = (ok, label) => `<span class="badge ${ok ? 'badge-success' : 'badge-warning'}" style="margin-right: 8px;">${ok ? '✓' : '⚠'} ${label}</span>`;
+            document.getElementById('providers-list').innerHTML = providers.map((p, index) => {
+                const badge = p.enabled
+                    ? '<span class="badge badge-success">attiva</span>'
+                    : '<span class="badge badge-warning">non attiva</span>';
 
-            const apitube = data.apitube || {};
-            let apitubeLabel;
-            if (!apitube.enabled) {
-                apitubeLabel = 'APITube (manca APITUBE_API_KEY in .env)';
-            } else if (apitube.fallback_only) {
-                apitubeLabel = `APITube — solo aziende senza risultati, max ${apitube.max_requests_per_run}/run`;
-            } else {
-                apitubeLabel = `APITube — tutte le aziende, max ${apitube.max_requests_per_run}/run`;
-            }
+                let extra = p.note ? ` — ${p.note}` : '';
+                if (p.key === 'apitube' && p.enabled) {
+                    extra = p.fallback_only
+                        ? ` — solo aziende senza risultati, max ${p.max_requests_per_run}/run`
+                        : ` — tutte le aziende, max ${p.max_requests_per_run}/run`;
+                }
+                if (p.key === 'rss' && p.enabled && p.active_feeds) {
+                    extra = ` — ${p.active_feeds} feed attivi`;
+                }
 
-            document.getElementById('providers-status').innerHTML =
-                badge(data.google_news_rss.enabled, 'Google News RSS (gratuito)') +
-                badge(data.gdelt.enabled, 'GDELT (gratuito)') +
-                badge(data.gnews.enabled, data.gnews.enabled ? 'GNews.io' : 'GNews.io (manca GNEWS_API_KEY in .env)') +
-                badge(data.rss.enabled, `RSS ufficiali (${data.rss.active_feeds} attivi)`) +
-                badge(apitube.enabled, apitubeLabel);
+                const toggle = p.configurable
+                    ? `<label style="font-size:12px; cursor:pointer; white-space:nowrap;">
+                           <input type="checkbox" ${p.enabled ? 'checked' : ''}
+                                  onchange="toggleProvider('${p.key}', this.checked)"> usa
+                       </label>`
+                    : `<span style="font-size:12px; color:#7f8c8d; white-space:nowrap;" title="Si attiva aggiungendo la chiave nel file .env">da .env</span>`;
+
+                return `
+                    <div style="display:flex; align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid #eee;">
+                        <div style="display:flex; flex-direction:column;">
+                            <button type="button" class="btn btn-sm" style="padding:0 6px; line-height:1.2;"
+                                    onclick="moveProvider(${index}, -1)" ${index === 0 ? 'disabled' : ''}>▲</button>
+                            <button type="button" class="btn btn-sm" style="padding:0 6px; line-height:1.2;"
+                                    onclick="moveProvider(${index}, 1)" ${index === providers.length - 1 ? 'disabled' : ''}>▼</button>
+                        </div>
+                        <div style="min-width:22px; color:#7f8c8d; font-weight:600;">${p.position}.</div>
+                        <div style="flex:1;">
+                            <strong>${p.name}</strong> ${badge}<br>
+                            <small style="color:#7f8c8d;">${p.description}${extra}</small>
+                        </div>
+                        ${toggle}
+                    </div>
+                `;
+            }).join('');
         } catch (error) {
             console.error('Error loading providers status:', error);
+        }
+    }
+
+    async function moveProvider(index, delta) {
+        const target = index + delta;
+        if (target < 0 || target >= providerOrder.length) return;
+
+        const reordered = providerOrder.slice();
+        [reordered[index], reordered[target]] = [reordered[target], reordered[index]];
+
+        try {
+            const response = await fetch('/api/monitoring/providers/order', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ order: reordered })
+            });
+            if (!response.ok) {
+                const err = await response.json();
+                alert('Errore: ' + (err.detail || 'ordine non salvato'));
+                return;
+            }
+            loadProvidersStatus();
+        } catch (error) {
+            alert('Errore: ' + error.message);
+        }
+    }
+
+    async function toggleProvider(key, enabled) {
+        const setting = PROVIDER_SETTING[key];
+        if (!setting) return;
+
+        try {
+            await fetch('/api/settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ [setting]: String(enabled) })
+            });
+            loadProvidersStatus();
+        } catch (error) {
+            alert('Errore: ' + error.message);
+            loadProvidersStatus();
         }
     }
 
@@ -516,11 +597,12 @@
             }
 
             if (data.is_running) {
-                statusDiv.innerHTML = '✓ Scheduler ATTIVO - Monitoraggio in esecuzione automatica';
+                statusDiv.innerHTML = `✓ Ricerca automatica ATTIVA ogni ${data.interval_hours || 24} ore`
+                    + formatNextRun(data.next_run_at);
                 statusDiv.style.background = '#d4edda';
                 statusDiv.style.color = '#155724';
             } else {
-                statusDiv.innerHTML = '⚠ Scheduler INATTIVO - Clicca "Avvia scheduler" per iniziare il monitoraggio automatico';
+                statusDiv.innerHTML = '⚠ Ricerca automatica NON attiva - le notizie non si aggiornano da sole. Clicca "Avvia scheduler".';
                 statusDiv.style.background = '#fff3cd';
                 statusDiv.style.color = '#856404';
             }
@@ -530,18 +612,21 @@
     }
 
     async function startScheduler() {
-        const hours = prompt('Intervallo monitoraggio (ore)?', '24');
-        if (!hours) return;
+        // No prompt: the interval is the one in the field below, saved and
+        // reused. Being asked again at every start was pure friction.
+        const hours = document.getElementById('check-interval').value || 24;
 
         try {
-            const response = await fetch(`/api/monitoring/start?interval_hours=${hours}`, {
+            const response = await fetch(`/api/monitoring/start?interval_hours=${encodeURIComponent(hours)}`, {
                 method: 'POST'
             });
+            const data = await response.json();
+
             if (response.ok) {
-                alert('Scheduler avviato! Il sistema cercherà notizie ogni ' + hours + ' ore');
+                alert('✓ ' + data.message + '\n\nResta attivo anche dopo un riavvio del server.');
                 checkSchedulerStatus();
             } else {
-                alert('Errore nell\'avvio dello scheduler');
+                alert('Errore: ' + (data.detail || 'avvio fallito'));
             }
         } catch (error) {
             alert('Errore: ' + error.message);
@@ -549,12 +634,12 @@
     }
 
     async function stopScheduler() {
-        if (!confirm('Fermare il monitoraggio automatico?')) return;
+        if (!confirm('Fermare il monitoraggio automatico?\n\nLe notizie non verranno più cercate da sole.')) return;
 
         try {
             const response = await fetch('/api/monitoring/stop', { method: 'POST' });
             if (response.ok) {
-                alert('Scheduler fermato');
+                alert('Monitoraggio automatico disattivato');
                 checkSchedulerStatus();
             } else {
                 alert('Errore nel fermo dello scheduler');
@@ -562,6 +647,17 @@
         } catch (error) {
             alert('Errore: ' + error.message);
         }
+    }
+
+    function formatNextRun(iso) {
+        if (!iso) return '';
+        const when = new Date(iso);
+        const hours = Math.round((when - new Date()) / 3600000);
+        const stamp = when.toLocaleString('it-IT', {
+            weekday: 'short', day: 'numeric', month: 'short',
+            hour: '2-digit', minute: '2-digit'
+        });
+        return hours > 0 ? ` — prossima ricerca ${stamp} (tra ~${hours}h)` : ` — prossima ricerca ${stamp}`;
     }
 
     async function runMonitoringNow() {
