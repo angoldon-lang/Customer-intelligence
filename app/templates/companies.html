@@ -25,9 +25,31 @@
         </select>
     </div>
 
+    <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px;">
+        <label style="cursor: pointer; font-size: 14px;">
+            <input type="checkbox" id="select-all" onchange="toggleSelectAll(this.checked)">
+            Seleziona tutte le aziende visibili
+        </label>
+        <span id="selection-count" style="color: #7f8c8d; font-size: 13px;"></span>
+    </div>
+
+    <div id="bulk-bar" style="display: none; align-items: center; gap: 8px; flex-wrap: wrap;
+         padding: 12px; margin-bottom: 15px; background: #eaf4fb; border-radius: 4px;">
+        <strong style="font-size: 14px;"><span id="bulk-count">0</span> selezionate:</strong>
+        <button class="btn btn-sm btn-success" onclick="bulkStatus('Attiva')">▶ Riattiva monitoraggio</button>
+        <button class="btn btn-sm btn-warning" onclick="bulkStatus('Pausa')">⏸ Metti in pausa</button>
+        <button class="btn btn-sm btn-warning" onclick="bulkStatus('Archiviata')">📦 Archivia</button>
+        <select id="bulk-cluster" style="max-width: 220px;">
+            <option value="">Aggiungi a cluster...</option>
+        </select>
+        <button class="btn btn-sm btn-primary" onclick="bulkCluster()">➕ Aggiungi</button>
+        <button class="btn btn-sm btn-danger" onclick="bulkDelete()" style="margin-left: auto;">🗑️ Elimina</button>
+    </div>
+
     <table class="table">
         <thead>
             <tr>
+                <th style="width: 32px;"></th>
                 <th>Ragione Sociale</th>
                 <th>Tipo</th>
                 <th>Stato</th>
@@ -39,7 +61,7 @@
         </thead>
         <tbody id="companies-table">
             <tr>
-                <td colspan="7" style="text-align: center; color: #7f8c8d;">Caricamento...</td>
+                <td colspan="8" style="text-align: center; color: #7f8c8d;">Caricamento...</td>
             </tr>
         </tbody>
     </table>
@@ -138,15 +160,33 @@
         if (companies.length === 0) {
             tbody.innerHTML = '';
             emptyState.style.display = 'block';
+            // Clear it too, or "select all visible" would still act on the
+            // rows from the previous filter.
+            visibleIds = [];
+            updateSelectionUI();
             return;
         }
 
         emptyState.style.display = 'none';
-        tbody.innerHTML = companies.map(c => `
-            <tr>
+        visibleIds = companies.map(c => c.id);
+
+        tbody.innerHTML = companies.map(c => {
+            // Only "Attiva" companies are searched: say so on the row, so
+            // it's never a guess whether a company is being monitored.
+            const monitored = c.status === 'Attiva';
+            const statusBadge = monitored ? 'badge-success' : 'badge-warning';
+            const hint = monitored ? '' : ' — non monitorata';
+
+            return `
+            <tr${monitored ? '' : ' style="opacity:0.65;"'}>
+                <td><input type="checkbox" value="${c.id}" onchange="toggleOne(${c.id}, this.checked)"
+                           ${selectedIds.has(c.id) ? 'checked' : ''}></td>
                 <td><strong>${c.company_name}</strong></td>
                 <td><span class="badge badge-primary">${c.relationship_type}</span></td>
-                <td><span class="badge ${c.status === 'Attiva' ? 'badge-success' : 'badge-warning'}">${c.status}</span></td>
+                <td>
+                    <span class="badge ${statusBadge}">${c.status}</span>
+                    <small style="color:#7f8c8d;">${hint}</small>
+                </td>
                 <td>${c.company_email || '-'}</td>
                 <td>${c.website ? `<a href="${c.website}" target="_blank" style="color: #3498db;">🔗</a>` : '-'}</td>
                 <td>${c.account_owner || '-'}</td>
@@ -154,7 +194,106 @@
                     <button class="btn btn-sm btn-primary" onclick="openEditModal(${c.id})">Modifica</button>
                 </td>
             </tr>
-        `).join('');
+        `;
+        }).join('');
+
+        updateSelectionUI();
+    }
+
+    // --- azioni massive ---------------------------------------------
+
+    let selectedIds = new Set();
+    let visibleIds = [];
+
+    function toggleOne(id, checked) {
+        checked ? selectedIds.add(id) : selectedIds.delete(id);
+        updateSelectionUI();
+    }
+
+    function toggleSelectAll(checked) {
+        visibleIds.forEach(id => checked ? selectedIds.add(id) : selectedIds.delete(id));
+        renderTable(currentlyShown());
+    }
+
+    function currentlyShown() {
+        return allCompanies.filter(c => visibleIds.includes(c.id));
+    }
+
+    function updateSelectionUI() {
+        const count = selectedIds.size;
+        document.getElementById('bulk-count').textContent = count;
+        document.getElementById('bulk-bar').style.display = count ? 'flex' : 'none';
+        document.getElementById('selection-count').textContent =
+            count ? `${count} selezionate` : '';
+
+        const selectAll = document.getElementById('select-all');
+        selectAll.checked = visibleIds.length > 0 && visibleIds.every(id => selectedIds.has(id));
+    }
+
+    function selectedList() {
+        return Array.from(selectedIds);
+    }
+
+    async function bulkStatus(status) {
+        const ids = selectedList();
+        const consequence = status === 'Attiva'
+            ? 'Rientreranno nella ricerca automatica delle notizie.'
+            : 'NON verranno più cercate notizie per queste aziende.';
+
+        if (!confirm(`Impostare ${ids.length} aziende su "${status}"?\n\n${consequence}`)) return;
+        await runBulk('/api/companies/bulk-status', { ids, status });
+    }
+
+    async function bulkCluster() {
+        const clusterId = document.getElementById('bulk-cluster').value;
+        if (!clusterId) {
+            alert('Scegli prima un cluster.');
+            return;
+        }
+        await runBulk('/api/companies/bulk-cluster', {
+            ids: selectedList(), cluster_id: parseInt(clusterId, 10)
+        });
+    }
+
+    async function bulkDelete() {
+        const ids = selectedList();
+        if (!confirm(`Eliminare definitivamente ${ids.length} aziende?\n\n`
+                   + 'Verranno rimosse anche le loro notizie. L\'operazione non è reversibile.')) return;
+        await runBulk('/api/companies/bulk-delete', { ids });
+    }
+
+    async function runBulk(endpoint, payload) {
+        try {
+            const response = await fetch(endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await response.json();
+
+            if (!response.ok) {
+                alert('Errore: ' + (data.detail || 'operazione fallita'));
+                return;
+            }
+
+            alert('✓ ' + data.message);
+            selectedIds.clear();
+            await loadCompanies();
+        } catch (error) {
+            alert('Errore: ' + error.message);
+        }
+    }
+
+    async function loadClusterOptions() {
+        try {
+            const data = await (await fetch('/api/clusters')).json();
+            const select = document.getElementById('bulk-cluster');
+            select.innerHTML = '<option value="">Aggiungi a cluster...</option>'
+                + (data.clusters || []).map(c =>
+                    `<option value="${c.id}">${c.cluster_name}</option>`).join('');
+        } catch (error) {
+            console.error('Error loading clusters:', error);
+        }
     }
 
     function openEditModal(companyId) {
@@ -242,7 +381,11 @@
 
     // Load on page load
     loadCompanies();
-    // Refresh every minute
-    setInterval(loadCompanies, 60000);
+    loadClusterOptions();
+    // Refresh every minute, but not while a selection is in progress:
+    // re-rendering under the user would lose what they ticked.
+    setInterval(() => {
+        if (selectedIds.size === 0) loadCompanies();
+    }, 60000);
 </script>
 {% endblock %}

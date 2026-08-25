@@ -4,6 +4,26 @@ Tutte le modifiche rilevanti a questo progetto sono documentate in questo file.
 Il formato segue [Keep a Changelog](https://keepachangelog.com/) e il progetto
 usa [Semantic Versioning](https://semver.org/lang/it/).
 
+## [0.15.0] - 2026-08-25
+
+### Added
+- **Azioni massive nella pagina Aziende**: checkbox su ogni riga,
+  "seleziona tutte le visibili" (rispetta i filtri attivi) e barra azioni:
+  - **metti in pausa / riattiva / archivia** un gruppo di aziende;
+  - **aggiungi a un cluster** in blocco, che e' il modo rapido di sistemare
+    le "aziende senza cluster" segnalate dalla guida al flusso settimanale;
+  - **elimina** in blocco, con le notizie collegate.
+  La conferma dice sempre la conseguenza ("NON verranno piu' cercate
+  notizie"), non solo quante righe cambiano.
+- Nella tabella ogni azienda non attiva e' marcata **"non monitorata"** ed
+  e' resa in grigio: lo stato non e' piu' un'etichetta da interpretare.
+
+### Verificato
+- **Un'azienda in "Pausa" non viene cercata.** Vale anche per "Archiviata"
+  e "Needs Review": solo "Attiva" entra nel monitoraggio. Il comportamento
+  era gia' corretto, ora e' fissato da test propri, incluso il passaggio
+  pausa -> riattivazione, cosi' non puo' rompersi in silenzio.
+
 ## [0.14.0] - 2026-08-25
 
 ### Fixed

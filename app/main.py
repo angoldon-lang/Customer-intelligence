@@ -493,6 +493,113 @@ def delete_company(company_id: int, db: Session = Depends(get_db)):
     return {"message": "Company deleted"}
 
 
+COMPANY_STATUSES = ["Attiva", "Pausa", "Needs Review", "Archiviata"]
+
+
+@app.post("/api/companies/bulk-status")
+def bulk_update_company_status(payload: dict = Body(...), db: Session = Depends(get_db)):
+    """
+    Change the status of many companies at once.
+
+    Only companies in "Attiva" are monitored, so this is how you take a
+    batch out of the search (Pausa) or put it back in.
+    Body: {ids: [...], status: "Pausa"}
+    """
+    ids = payload.get("ids") or []
+    status = payload.get("status")
+
+    if status not in COMPANY_STATUSES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Stato non valido, usa uno tra {COMPANY_STATUSES}",
+        )
+    if not ids:
+        raise HTTPException(status_code=400, detail="Nessuna azienda selezionata")
+
+    updated = (
+        db.query(Company)
+        .filter(Company.id.in_(ids))
+        .update({Company.status: status}, synchronize_session=False)
+    )
+    db.commit()
+
+    monitored = status == "Attiva"
+    return {
+        "updated": updated,
+        "status": status,
+        "message": (
+            f"{updated} aziende impostate su '{status}': "
+            + ("rientrano nel monitoraggio." if monitored else "non verranno piu' cercate.")
+        ),
+    }
+
+
+@app.post("/api/companies/bulk-cluster")
+def bulk_assign_cluster(payload: dict = Body(...), db: Session = Depends(get_db)):
+    """
+    Add many companies to a cluster in one go. Body: {ids: [...], cluster_id: N}
+
+    A company outside every cluster never appears in any report, so this is
+    the fix for what the weekly-flow guide flags.
+    """
+    ids = payload.get("ids") or []
+    cluster_id = payload.get("cluster_id")
+
+    if not ids:
+        raise HTTPException(status_code=400, detail="Nessuna azienda selezionata")
+
+    cluster = db.query(Cluster).filter_by(id=cluster_id).first()
+    if not cluster:
+        raise HTTPException(status_code=404, detail="Cluster non trovato")
+
+    existing = {
+        row[0] for row in
+        db.query(CompanyCluster.company_id).filter(CompanyCluster.cluster_id == cluster_id).all()
+    }
+    added = 0
+    for company_id in ids:
+        if company_id in existing:
+            continue
+        db.add(CompanyCluster(company_id=company_id, cluster_id=cluster_id))
+        added += 1
+    db.commit()
+
+    return {
+        "added": added,
+        "skipped": len(ids) - added,
+        "message": (
+            f"{added} aziende aggiunte a '{cluster.cluster_name}'"
+            + (f" ({len(ids) - added} erano gia' presenti)" if len(ids) - added else "")
+        ),
+    }
+
+
+@app.post("/api/companies/bulk-delete")
+def bulk_delete_companies(payload: dict = Body(...), db: Session = Depends(get_db)):
+    """
+    Delete many companies, with their news and cluster assignments.
+
+    A POST rather than a DELETE with a body: bodies on DELETE are widely
+    unsupported and were the source of an earlier silent failure.
+    """
+    ids = payload.get("ids") or []
+    if not ids:
+        raise HTTPException(status_code=400, detail="Nessuna azienda selezionata")
+
+    companies = db.query(Company).filter(Company.id.in_(ids)).all()
+    for company in companies:
+        # Deleted one by one, not with a bulk delete(): the cascade to news
+        # items and cluster links is defined on the relationship, and a bulk
+        # query-level delete would bypass it and leave orphan rows.
+        db.delete(company)
+    db.commit()
+
+    return {
+        "deleted": len(companies),
+        "message": f"{len(companies)} aziende eliminate con le loro notizie",
+    }
+
+
 @app.get("/api/coverage")
 def get_search_coverage(status: str = None, search: str = None, db: Session = Depends(get_db)):
     """
