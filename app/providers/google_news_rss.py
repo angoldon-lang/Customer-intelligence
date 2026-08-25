@@ -289,10 +289,20 @@ class GoogleNewsRSSProvider(NewsSourceProvider):
             return None
 
         text = re.sub(r"<[^>]+>", " ", summary)
+        # A summary cut short mid-tag (something upstream truncated it)
+        # leaves "<a href="https://news.google.com/rss/articles/CBMixgF..."
+        # with no closing ">", which the rule above cannot match: the raw
+        # markup then reached the card verbatim. Drop the dangling fragment.
+        text = re.sub(r"<[^>]*$", " ", text)
         text = unescape(text)
         text = re.sub(r"\s+", " ", text).strip()
 
         if not text:
+            return None
+
+        # What survives is sometimes just the article URL (the anchor's href
+        # with its text truncated away): a link is not a summary.
+        if re.fullmatch(r"https?://\S*", text):
             return None
 
         def key(value: str) -> str:

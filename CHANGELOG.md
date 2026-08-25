@@ -4,6 +4,25 @@ Tutte le modifiche rilevanti a questo progetto sono documentate in questo file.
 Il formato segue [Keep a Changelog](https://keepachangelog.com/) e il progetto
 usa [Semantic Versioning](https://semver.org/lang/it/).
 
+## [0.12.1] - 2026-08-25
+
+### Fixed
+- **Sommari con HTML grezzo nelle card** (`<a href="https://news.google.com/
+  rss/articles/CBMixgF...`). La pulizia toglieva i tag completi, ma quando
+  il testo arrivava **troncato a meta' tag** mancava il `>` di chiusura e
+  la regex non trovava nulla: il markup finiva integro nella pagina. Ora il
+  frammento pendente viene rimosso, e un sommario che si riduce al solo
+  link viene scartato invece di essere mostrato.
+  Anche **"Correggi link notizie"** in Impostazioni ora ripara davvero
+  questi record: prima usava la stessa pulizia difettosa.
+- **La card sfondava la larghezza della pagina**: gli id base64 di Google
+  News sono una stringa unica senza spazi, che allargava la card e spingeva
+  i pulsanti fuori dallo schermo. Ora il testo va a capo e un sommario
+  troppo lungo viene contenuto in altezza.
+- La pagina Notizie **ripulisce il sommario anche in visualizzazione**, cosi'
+  i record salvati male restano leggibili senza dover prima lanciare la
+  manutenzione.
+
 ## [0.12.0] - 2026-08-25
 
 ### Added

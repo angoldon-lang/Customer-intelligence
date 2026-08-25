@@ -163,6 +163,32 @@
         return div.innerHTML;
     }
 
+    // Last line of defence for summaries stored before the cleaning was
+    // fixed: those hold raw <description> markup, often cut mid-tag, and
+    // showed as a wall of "<a href=...base64...". "Correggi link notizie"
+    // in Impostazioni repairs them in the database; this keeps the page
+    // readable until then.
+    function cleanSummary(summary, title) {
+        if (!summary) return '';
+
+        let text = String(summary)
+            .replace(/<[^>]*>/g, ' ')   // complete tags
+            .replace(/<[^>]*$/, ' ')    // a tag cut short by truncation
+            .replace(/&nbsp;/gi, ' ');
+
+        const decoder = document.createElement('textarea');
+        decoder.innerHTML = text;
+        text = decoder.value.replace(/\s+/g, ' ').trim();
+
+        if (!text) return '';
+        if (/^https?:\/\/\S*$/.test(text)) return '';  // a bare link is not a summary
+
+        const key = (value) => String(value || '').replace(/\W+/g, '').toLowerCase();
+        if (title && key(text).slice(0, 60) === key(title).slice(0, 60)) return '';
+
+        return text;
+    }
+
     function renderNews(news) {
         const container = document.getElementById('news-list');
         const emptyState = document.getElementById('empty-state');
@@ -210,7 +236,10 @@
                         &middot; <a href="${url}" target="_blank" rel="noopener noreferrer">${escapeHtml(n.source_name || 'N/D')}</a>
                         ${publishedDate ? `&middot; ${publishedDate}` : ''}
                     </p>
-                    ${n.summary ? `<p class="news-card__summary">${escapeHtml(n.summary)}</p>` : ''}
+                    ${(() => {
+                        const summary = cleanSummary(n.summary, n.title);
+                        return summary ? `<p class="news-card__summary">${escapeHtml(summary)}</p>` : '';
+                    })()}
 
                     <div class="news-card__tags">
                         <span class="badge ${statusBadges[n.status] || 'badge-primary'}">${statusLabels[n.status] || n.status}</span>

@@ -296,6 +296,12 @@
             padding: 18px 20px;
             margin-bottom: 15px;
             background: white;
+            /* A headline or link with no spaces (Google News ids are one
+               long base64 blob) would otherwise stretch the card past the
+               page and push the buttons out of reach. */
+            overflow-wrap: anywhere;
+            word-break: break-word;
+            min-width: 0;
         }
         .news-card__title {
             margin: 0 0 8px 0;
@@ -313,6 +319,10 @@
             color: #555;
             font-size: 14px;
             line-height: 1.5;
+            /* Cap a stray long summary instead of letting it dominate the
+               card; the full text is a click away on the article. */
+            max-height: 4.5em;
+            overflow: hidden;
         }
         .news-card__tags {
             display: flex;
