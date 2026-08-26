@@ -26,6 +26,15 @@ KNOWN_SETTINGS = {
     "SMTP_FROM_EMAIL": ("SMTP_FROM_EMAIL", str),
     "SMTP_FROM_NAME": ("SMTP_FROM_NAME", str),
     "SMTP_USE_SSL": ("SMTP_USE_SSL", _as_bool),
+    # Report branding
+    "BRAND_NAME": ("BRAND_NAME", str),
+    "BRAND_COLOR": ("BRAND_COLOR", str),
+    "BRAND_LOGO": (None, str),          # filename under app/static/branding
+    "REPORT_INTRO": ("REPORT_INTRO", str),
+    "REPORT_FOOTER": ("REPORT_FOOTER", str),
+    "REPORT_SHOW_SCORES": ("REPORT_SHOW_SCORES", _as_bool),
+    "NEWS_SEARCH_DAYS": ("NEWS_SEARCH_DAYS", int),
+    "REMEMBER_DELETED_NEWS": ("REMEMBER_DELETED_NEWS", _as_bool),
     "DEFAULT_COMPANY_TYPE": ("DEFAULT_COMPANY_TYPE", str),
     "DEFAULT_COMPANY_STATUS": ("DEFAULT_COMPANY_STATUS", str),
     "MIN_RELEVANCE_SCORE": ("MIN_RELEVANCE_SCORE", int),

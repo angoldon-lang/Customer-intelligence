@@ -46,11 +46,13 @@ class ReportGenerator:
             ).order_by(NewsItem.relevance_score.desc()).all()
 
         # Generate report content
-        body_html = self._generate_html_report(cluster, news_items, period_start, period_end)
-        body_text = self._generate_text_report(cluster, news_items, period_start, period_end)
+        from app.services.branding import get_branding
+        brand = get_branding(db)
 
-        # Create subject
-        subject = f"Customer Intelligence Report - {cluster.cluster_name} - {period_end.strftime('%Y-%m-%d')}"
+        body_html = self._generate_html_report(cluster, news_items, period_start, period_end, brand)
+        body_text = self._generate_text_report(cluster, news_items, period_start, period_end, brand)
+
+        subject = f"{brand['name']} - {cluster.cluster_name} - {period_end.strftime('%Y-%m-%d')}"
 
         # Create report object
         report = Report(
@@ -75,9 +77,27 @@ class ReportGenerator:
         news_items: List[NewsItem],
         period_start: datetime,
         period_end: datetime,
+        brand: dict = None,
     ) -> str:
         """Generate HTML report content."""
+        from app.services.branding import default_branding
+
+        brand = brand or default_branding()
         period_str = f"{period_start.strftime('%d/%m/%Y')} - {period_end.strftime('%d/%m/%Y')}"
+
+        # Referenced by Content-ID, not embedded: Gmail and Outlook drop
+        # data: images, and a link to the local server is unreachable for
+        # whoever receives the email. email_sender attaches the file.
+        logo_html = (
+            f'<img class="brand-logo" src="cid:{brand["logo_cid"]}" alt="{escape(brand["name"], quote=True)}">'
+            if brand.get("logo_path") else ""
+        )
+
+        intro = brand.get("intro") or "Buongiorno,\ndi seguito il riepilogo delle notizie piu' rilevanti."
+        intro_html = "".join(
+            f"<p>{escape(line, quote=False)}</p>"
+            for line in intro.splitlines() if line.strip()
+        )
 
         html = f"""
         <!DOCTYPE html>
@@ -86,7 +106,9 @@ class ReportGenerator:
             <meta charset="UTF-8">
             <style>
                 body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
-                .header {{ background-color: #2c3e50; color: white; padding: 20px; margin-bottom: 20px; }}
+                .header {{ background-color: {brand['color']}; color: white; padding: 20px; margin-bottom: 20px; }}
+                .header h1 {{ margin: 0 0 10px 0; }}
+                .brand-logo {{ max-height: 52px; max-width: 240px; margin-bottom: 12px; }}
                 .section {{ margin-bottom: 30px; }}
                 .news-item {{ border-left: 4px solid #3498db; padding-left: 15px; margin-bottom: 26px; }}
                 .news-item h3 {{ margin: 0 0 6px 0; line-height: 1.35; }}
@@ -109,15 +131,15 @@ class ReportGenerator:
         </head>
         <body>
             <div class="header">
-                <h1>Customer Intelligence Report</h1>
-                <p><strong>Cluster:</strong> {cluster.cluster_name}</p>
+                {logo_html}
+                <h1>{escape(brand['name'], quote=False)}</h1>
+                <p><strong>Cluster:</strong> {escape(cluster.cluster_name, quote=False)}</p>
                 <p><strong>Periodo:</strong> {period_str}</p>
             </div>
 
             <div class="section">
                 <h2>Riepilogo</h2>
-                <p>Buongiorno,</p>
-                <p>di seguito il riepilogo delle notizie più rilevanti relative al cluster <strong>{cluster.cluster_name}</strong>.</p>
+                {intro_html}
                 <p>Nel periodo considerato sono state trovate <strong>{len(news_items)} notizie</strong> che superano il punteggio minimo di rilevanza ({cluster.min_relevance_score}/10).</p>
             </div>
         """
@@ -144,6 +166,14 @@ class ReportGenerator:
                 body = self.article_text(news)
                 body_html = f'<p class="summary">{escape(body, quote=False)}</p>' if body else ""
 
+                scores_html = "" if not brand.get("show_scores") else f"""
+                    <div>
+                        <span class="score">Rilevanza: <strong class="{impact_class}">{news.relevance_score:.1f}/10</strong></span>
+                        <span class="score">Urgenza: <strong>{news.urgency_score:.1f}/10</strong></span>
+                        <span class="score">Opportunità: <strong>{news.commercial_score:.1f}/10</strong></span>
+                        <span class="score">Rischio: <strong>{news.risk_score:.1f}/10</strong></span>
+                    </div>"""
+
                 html += f"""
                 <div class="news-item">
                     <h3>{idx}. <a href="{escape(link, quote=True)}">{title}</a></h3>
@@ -155,12 +185,7 @@ class ReportGenerator:
 
                     <p><a class="read-more" href="{escape(link, quote=True)}">Leggi l'articolo &rarr;</a></p>
 
-                    <div>
-                        <span class="score">Rilevanza: <strong class="{impact_class}">{news.relevance_score:.1f}/10</strong></span>
-                        <span class="score">Urgenza: <strong>{news.urgency_score:.1f}/10</strong></span>
-                        <span class="score">Opportunità: <strong>{news.commercial_score:.1f}/10</strong></span>
-                        <span class="score">Rischio: <strong>{news.risk_score:.1f}/10</strong></span>
-                    </div>
+                    {scores_html}
                 </div>
                 """
 
@@ -168,11 +193,10 @@ class ReportGenerator:
         else:
             html += '<div class="section"><p>Nessuna notizia rilevante nel periodo considerato.</p></div>'
 
-        html += """
+        html += f"""
             <div class="section">
                 <p style="color: #999; font-size: 12px;">
-                    Report generato automaticamente da Customer Intelligence Monitor.
-                    Per modifiche alla configurazione dei cluster, contattare l'amministratore.
+                    {escape(brand['footer'] or '', quote=False)}
                 </p>
             </div>
         </body>
@@ -226,8 +250,12 @@ class ReportGenerator:
         news_items: List[NewsItem],
         period_start: datetime,
         period_end: datetime,
+        brand: dict = None,
     ) -> str:
         """Generate plain text report content."""
+        from app.services.branding import default_branding
+
+        brand = brand or default_branding()
         period_str = f"{period_start.strftime('%d/%m/%Y')} - {period_end.strftime('%d/%m/%Y')}"
 
         text = f"""CUSTOMER INTELLIGENCE REPORT

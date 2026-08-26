@@ -1,7 +1,9 @@
 """Email sending service via SMTP."""
 
+import os
 import smtplib
 from email.mime.text import MIMEText
+from email.mime.image import MIMEImage
 from email.mime.multipart import MIMEMultipart
 from email.utils import formataddr
 from typing import List, Dict, Any
@@ -23,6 +25,8 @@ class EmailSender:
             self.from_email = get_setting(db, "SMTP_FROM_EMAIL") or self.smtp_user
             self.from_name = get_setting(db, "SMTP_FROM_NAME")
             self.use_ssl = bool(get_setting(db, "SMTP_USE_SSL"))
+            from app.services.branding import logo_path
+            self.logo_path = logo_path(db)
         else:
             self.smtp_host = settings.SMTP_HOST
             self.smtp_port = settings.SMTP_PORT
@@ -31,6 +35,7 @@ class EmailSender:
             self.from_email = settings.SMTP_FROM_EMAIL
             self.from_name = settings.SMTP_FROM_NAME
             self.use_ssl = settings.SMTP_USE_SSL
+            self.logo_path = None
 
         self.timeout = settings.SMTP_TIMEOUT
 
@@ -79,16 +84,26 @@ class EmailSender:
             return {'success': False, 'error': problem}
 
         try:
-            msg = MIMEMultipart('alternative')
-            msg['Subject'] = subject
-            msg['From'] = formataddr((self.from_name, self.from_email)) if self.from_name else self.from_email
-            msg['To'] = ', '.join(to_emails)
-
+            body = MIMEMultipart('alternative')
             # Plain part first: the last attached part is what mail clients
             # prefer, so HTML has to come second.
             if text_content:
-                msg.attach(MIMEText(text_content, 'plain'))
-            msg.attach(MIMEText(html_content, 'html'))
+                body.attach(MIMEText(text_content, 'plain'))
+            body.attach(MIMEText(html_content, 'html'))
+
+            logo = self._logo_part(html_content)
+            if logo:
+                # "related" wraps the alternative body together with the
+                # inline image the HTML refers to by cid:.
+                msg = MIMEMultipart('related')
+                msg.attach(body)
+                msg.attach(logo)
+            else:
+                msg = body
+
+            msg['Subject'] = subject
+            msg['From'] = formataddr((self.from_name, self.from_email)) if self.from_name else self.from_email
+            msg['To'] = ', '.join(to_emails)
 
             with self._connect() as server:
                 server.login(self.smtp_user, self.smtp_password)
@@ -102,6 +117,32 @@ class EmailSender:
 
         except Exception as e:
             return {'success': False, 'error': self.explain_error(e)}
+
+    def _logo_part(self, html_content: str):
+        """
+        The branding logo as an inline attachment, if the HTML asks for it.
+
+        Only attached when the body actually references the cid, so a plain
+        report never carries a stray image.
+        """
+        from app.services.branding import LOGO_CID
+
+        if not self.logo_path or f"cid:{LOGO_CID}" not in (html_content or ""):
+            return None
+
+        try:
+            with open(self.logo_path, "rb") as handle:
+                data = handle.read()
+        except OSError as e:
+            # A missing logo must not stop the report going out.
+            print(f"[Email] Logo non leggibile ({e}): invio senza logo")
+            return None
+
+        subtype = os.path.splitext(self.logo_path)[1].lstrip(".").lower()
+        image = MIMEImage(data, _subtype="jpeg" if subtype in ("jpg", "jpeg") else subtype)
+        image.add_header("Content-ID", f"<{LOGO_CID}>")
+        image.add_header("Content-Disposition", "inline", filename=os.path.basename(self.logo_path))
+        return image
 
     def explain_error(self, error: Exception) -> str:
         """

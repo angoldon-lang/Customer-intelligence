@@ -56,9 +56,9 @@ USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTM
 class GoogleNewsRSSProvider(NewsSourceProvider):
     """Search Google News via its public RSS search feed."""
 
-    def __init__(self, timeout: int = None, days: int = 30):
+    def __init__(self, timeout: int = None, days: int = None):
         self.timeout = timeout or settings.NEWS_SEARCH_TIMEOUT
-        self.days = days
+        self.days = days or settings.NEWS_SEARCH_DAYS
         self._last_request_at = 0.0
         self.blocked = False
         self._blocked_until = 0.0

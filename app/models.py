@@ -1,7 +1,10 @@
 """SQLAlchemy models for database tables."""
 
 from datetime import datetime
-from sqlalchemy import Column, String, Integer, Boolean, DateTime, ForeignKey, Text, Float
+from sqlalchemy import (
+    Column, String, Integer, Boolean, DateTime, ForeignKey, Text, Float,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import relationship
 from app.database import Base
 
@@ -32,6 +35,9 @@ class Company(Base):
     # Without this cascade, deleting a company hits a FOREIGN KEY constraint
     # from search_logs and the request dies with a non-JSON 500.
     search_logs = relationship("SearchLog", back_populates="company", cascade="all, delete-orphan")
+    # Cascades with the company: deleting a company should forget its
+    # history entirely, otherwise re-importing it would find nothing.
+    seen_articles = relationship("SeenArticle", back_populates="company", cascade="all, delete-orphan")
 
 
 class Cluster(Base):
@@ -121,6 +127,36 @@ class NewsItem(Base):
 
     # Relationships
     company = relationship("Company", back_populates="news_items")
+
+
+class SeenArticle(Base):
+    """
+    Every article ever offered for a company, kept even after deletion.
+
+    Deduplication used to look only at the news_items table, so deleting a
+    news item made the next run treat it as new and put it straight back -
+    and pay Claude to classify it again. This ledger is the memory that
+    survives the delete: rows here are tiny (a hash and a date) and are
+    cleared only on purpose, from Impostazioni.
+    """
+
+    __tablename__ = "seen_articles"
+
+    id = Column(Integer, primary_key=True)
+    company_id = Column(Integer, ForeignKey("companies.id"), nullable=False, index=True)
+    # Hashes, not the values: an index over full URLs and titles would grow
+    # large fast, and nothing here ever needs reading back.
+    url_hash = Column(String(64), nullable=False, index=True)
+    title_hash = Column(String(64), index=True)
+    first_seen_at = Column(DateTime, default=datetime.utcnow)
+    last_seen_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    times_seen = Column(Integer, default=1)
+
+    company = relationship("Company", back_populates="seen_articles")
+
+    __table_args__ = (
+        UniqueConstraint("company_id", "url_hash", name="uq_seen_company_url"),
+    )
 
 
 class NewsSource(Base):

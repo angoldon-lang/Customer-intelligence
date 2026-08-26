@@ -28,10 +28,10 @@ class APITubeProvider(NewsSourceProvider):
     # Only consulted when the free providers came back empty for a company.
     fallback_only = True
 
-    def __init__(self, api_key: str = None, timeout: int = None, days: int = 30):
+    def __init__(self, api_key: str = None, timeout: int = None, days: int = None):
         self.api_key = api_key or settings.APITUBE_API_KEY
         self.timeout = timeout or settings.NEWS_SEARCH_TIMEOUT
-        self.days = days
+        self.days = days or settings.NEWS_SEARCH_DAYS
         self.disabled_reason = None
         self.last_call_error = None
         self.requests_made = 0

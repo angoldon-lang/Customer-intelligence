@@ -119,6 +119,66 @@
     </div>
 
     <div class="card">
+        <h3>🎨 Personalizza il report</h3>
+        <small style="color: #7f8c8d; display: block; margin-bottom: 15px;">
+            Logo, colore e testi che compaiono nella mail inviata ai destinatari.
+        </small>
+
+        <div class="form-group">
+            <label>Logo aziendale</label>
+            <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                <div id="logo-preview" style="min-width: 120px; min-height: 52px; display: flex;
+                     align-items: center; padding: 8px; background: #f5f5f5; border-radius: 4px;">
+                    <span style="color: #7f8c8d; font-size: 13px;">Nessun logo</span>
+                </div>
+                <input type="file" id="logo-file" accept="image/png,image/jpeg,image/gif"
+                       onchange="uploadLogo()" style="max-width: 260px;">
+                <button type="button" class="btn btn-sm btn-danger" onclick="removeLogo()">Rimuovi</button>
+            </div>
+            <small style="color: #7f8c8d;">PNG, JPG o GIF, massimo 1 MB. Viene allegato alla mail, così si vede anche in Outlook e Gmail.</small>
+        </div>
+
+        <form id="branding-form">
+            <div class="form-group">
+                <label>Titolo del report</label>
+                <input type="text" id="brand-name" placeholder="Customer Intelligence Report">
+            </div>
+
+            <div class="form-group">
+                <label>Colore intestazione</label>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <input type="color" id="brand-color" value="#2c3e50" style="width: 60px; height: 38px; padding: 2px;">
+                    <input type="text" id="brand-color-text" placeholder="#2c3e50" style="max-width: 140px;">
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>Testo di apertura</label>
+                <textarea id="report-intro" rows="3"
+                          placeholder="Buongiorno,&#10;di seguito il riepilogo delle notizie più rilevanti."></textarea>
+                <small style="color: #7f8c8d;">Una riga per paragrafo. Lascia vuoto per il testo predefinito.</small>
+            </div>
+
+            <div class="form-group">
+                <label>Testo a piè di pagina</label>
+                <textarea id="report-footer" rows="2"
+                          placeholder="Report generato automaticamente da Customer Intelligence Monitor."></textarea>
+            </div>
+
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" id="report-show-scores" checked>
+                    Mostra i punteggi (rilevanza, urgenza, opportunità, rischio)
+                </label>
+                <small style="color: #7f8c8d;">Toglili per una mail più sintetica verso destinatari esterni.</small>
+            </div>
+
+            <button type="submit" class="btn btn-success">💾 Salva</button>
+            <button type="button" class="btn btn-primary" onclick="previewReport()">👁️ Anteprima</button>
+        </form>
+    </div>
+
+    <div class="card">
         <h3>📡 Fonti notizie</h3>
         <small style="color: #7f8c8d; display: block; margin-bottom: 12px;">
             Le fonti vengono interrogate nell'ordine mostrato. Usa ▲▼ per cambiarlo:
@@ -212,6 +272,16 @@
             </div>
 
             <div class="form-group">
+                <label>Quanti giorni indietro cercare</label>
+                <input type="number" id="news-search-days" min="1" max="365" placeholder="30">
+                <small style="color: #7f8c8d;">
+                    Finestra usata da tutte le fonti (GDELT è limitato a 90 giorni dal suo servizio).
+                    Una finestra più ampia costa poco dopo la prima ricerca: le notizie già viste
+                    vengono saltate senza essere riclassificate.
+                </small>
+            </div>
+
+            <div class="form-group">
                 <label>Modalità classificazione</label>
                 <select id="classifier-mode">
                     <option value="ai">AI Claude (consuma crediti)</option>
@@ -240,6 +310,9 @@
             </button>
             <button type="button" class="btn btn-primary btn-sm" onclick="reviewOffTopic()">
                 🎯 Rivedi notizie non pertinenti
+            </button>
+            <button type="button" class="btn btn-primary btn-sm" onclick="forgetSeen()">
+                ↩️ Dimentica notizie cancellate
             </button>
             <button type="button" class="btn btn-danger btn-sm" onclick="cleanupDatabase()">
                 🧹 Pulisci database
@@ -737,6 +810,20 @@
         }
     }
 
+    async function forgetSeen() {
+        if (!confirm('Svuotare la memoria delle notizie già viste?\n\n'
+                   + 'Le notizie cancellate in passato potranno essere ritrovate e '
+                   + 'riproposte alla prossima ricerca. Serve solo se hai cancellato '
+                   + 'qualcosa per sbaglio.')) return;
+        try {
+            const response = await fetch('/api/admin/forget-seen-news', { method: 'POST' });
+            const data = await response.json();
+            alert(response.ok ? '✓ ' + data.message : 'Errore: ' + (data.detail || 'operazione fallita'));
+        } catch (error) {
+            alert('Errore: ' + error.message);
+        }
+    }
+
     async function cleanupDatabase() {
         if (!confirm('Rimuovere le notizie non approvate/inviate più vecchie di 180 giorni e lo storico monitoraggi oltre 180 giorni?')) return;
 
@@ -818,6 +905,7 @@
             DEFAULT_COMPANY_TYPE: value('default-company-type'),
             DEFAULT_COMPANY_STATUS: value('default-company-status'),
             MIN_RELEVANCE_SCORE: value('min-relevance-score'),
+            NEWS_SEARCH_DAYS: value('news-search-days'),
             CLASSIFIER_MODE: value('classifier-mode'),
             CLAUDE_MODEL: value('claude-model'),
         }, 'Filtri di default salvati.');
@@ -861,6 +949,100 @@
         }
     }
 
+    // --- personalizzazione report -----------------------------------
+
+    async function loadBranding() {
+        try {
+            const data = await (await fetch('/api/branding')).json();
+
+            setValue('brand-name', data.name);
+            setValue('brand-color', data.color);
+            setValue('brand-color-text', data.color);
+            setValue('report-intro', data.intro);
+            setValue('report-footer', data.footer);
+            document.getElementById('report-show-scores').checked = data.show_scores !== false;
+
+            const preview = document.getElementById('logo-preview');
+            preview.innerHTML = data.logo_url
+                // Cache-busted: re-uploading keeps the same filename, so the
+                // browser would otherwise keep showing the old logo.
+                ? `<img src="${data.logo_url}?t=${Date.now()}" style="max-height:52px; max-width:200px;">`
+                : '<span style="color:#7f8c8d; font-size:13px;">Nessun logo</span>';
+        } catch (error) {
+            console.error('Error loading branding:', error);
+        }
+    }
+
+    async function uploadLogo() {
+        const input = document.getElementById('logo-file');
+        if (!input.files.length) return;
+
+        const form = new FormData();
+        form.append('file', input.files[0]);
+
+        try {
+            const response = await fetch('/api/branding/logo', { method: 'POST', body: form });
+            const data = await response.json();
+            if (response.ok) {
+                input.value = '';
+                loadBranding();
+            } else {
+                alert('Errore: ' + (data.detail || 'caricamento fallito'));
+            }
+        } catch (error) {
+            alert('Errore: ' + error.message);
+        }
+    }
+
+    async function removeLogo() {
+        if (!confirm('Rimuovere il logo dai report?')) return;
+        await fetch('/api/branding/logo', { method: 'DELETE' });
+        loadBranding();
+    }
+
+    async function previewReport() {
+        try {
+            const response = await fetch('/api/reports/preview', { method: 'POST' });
+            const data = await response.json();
+
+            if (!response.ok) {
+                alert('Errore: ' + (data.detail || 'anteprima non disponibile'));
+                return;
+            }
+
+            const preview = window.open('', '_blank');
+            if (!preview) {
+                alert('Il browser ha bloccato la finestra di anteprima.');
+                return;
+            }
+            preview.document.write(data.html);
+            preview.document.close();
+        } catch (error) {
+            alert('Errore: ' + error.message);
+        }
+    }
+
+    document.getElementById('branding-form').addEventListener('submit', (e) => {
+        e.preventDefault();
+        saveSettings({
+            BRAND_NAME: value('brand-name'),
+            BRAND_COLOR: value('brand-color-text') || value('brand-color'),
+            REPORT_INTRO: value('report-intro'),
+            REPORT_FOOTER: value('report-footer'),
+            REPORT_SHOW_SCORES: String(document.getElementById('report-show-scores').checked),
+        }, 'Personalizzazione salvata. Usa Anteprima per vedere il risultato.');
+    });
+
+    // Keep the colour picker and its text field in step.
+    document.getElementById('brand-color').addEventListener('input', (e) => {
+        document.getElementById('brand-color-text').value = e.target.value;
+    });
+    document.getElementById('brand-color-text').addEventListener('change', (e) => {
+        if (/^#[0-9a-fA-F]{6}$/.test(e.target.value)) {
+            document.getElementById('brand-color').value = e.target.value;
+        }
+    });
+
     function value(id) {
         const el = document.getElementById(id);
         return el ? el.value.trim() : '';
@@ -894,6 +1076,7 @@
             setValue('default-company-type', data.DEFAULT_COMPANY_TYPE);
             setValue('default-company-status', data.DEFAULT_COMPANY_STATUS);
             setValue('min-relevance-score', data.MIN_RELEVANCE_SCORE);
+            setValue('news-search-days', data.NEWS_SEARCH_DAYS);
             setValue('classifier-mode', data.CLASSIFIER_MODE);
             setValue('claude-model', data.CLAUDE_MODEL);
         } catch (error) {
@@ -925,6 +1108,7 @@
 
     // Load status on page load
     loadSettings();
+    loadBranding();
     loadCurrentUser();
     checkAPIStatus();
     checkSchedulerStatus();

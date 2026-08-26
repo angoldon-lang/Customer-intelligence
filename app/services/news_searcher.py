@@ -11,7 +11,7 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime
 from sqlalchemy.orm import Session
 from app.config import settings
-from app.models import Company, NewsItem, SearchLog
+from app.models import Company, NewsItem, SearchLog, SeenArticle
 from app.services.classifier import NewsClassifier
 from app.providers.base import NewsSourceProvider
 from app.providers.google_news_rss import GoogleNewsRSSProvider
@@ -218,6 +218,58 @@ class NewsSearcher:
         return news_items, provider_summary
 
     @staticmethod
+    def _fingerprint(value: str) -> str:
+        """Stable hash of a URL or title, insensitive to case and spacing."""
+        import hashlib
+
+        normalised = " ".join((value or "").lower().split())
+        return hashlib.sha256(normalised.encode("utf-8")).hexdigest()
+
+    @classmethod
+    def already_seen(cls, db: Session, company_id: int, url: str, title: str) -> bool:
+        """Whether this article was ever offered for this company before."""
+        if not settings.REMEMBER_DELETED_NEWS:
+            return False
+
+        url_hash = cls._fingerprint(url)
+        title_hash = cls._fingerprint(title)
+
+        row = (
+            db.query(SeenArticle)
+            .filter(
+                SeenArticle.company_id == company_id,
+                (SeenArticle.url_hash == url_hash) | (SeenArticle.title_hash == title_hash),
+            )
+            .first()
+        )
+        if not row:
+            return False
+
+        row.times_seen = (row.times_seen or 1) + 1
+        row.last_seen_at = datetime.utcnow()
+        return True
+
+    @classmethod
+    def remember_article(cls, db: Session, company_id: int, url: str, title: str) -> None:
+        """Record the article so it is not offered again after a delete."""
+        url_hash = cls._fingerprint(url)
+
+        existing = (
+            db.query(SeenArticle)
+            .filter(SeenArticle.company_id == company_id, SeenArticle.url_hash == url_hash)
+            .first()
+        )
+        if existing:
+            existing.last_seen_at = datetime.utcnow()
+            return
+
+        db.add(SeenArticle(
+            company_id=company_id,
+            url_hash=url_hash,
+            title_hash=cls._fingerprint(title),
+        ))
+
+    @staticmethod
     def is_off_topic(classification: Dict[str, Any]) -> bool:
         """
         Whether the classifier decided the article isn't about the company.
@@ -249,6 +301,7 @@ class NewsSearcher:
         """Deduplicate against the DB, classify with Claude, and save."""
         saved_items = []
         off_topic = 0
+        already_seen = 0
 
         for news_data in news_items:
             existing = db.query(NewsItem).filter(
@@ -256,6 +309,14 @@ class NewsSearcher:
                 ((NewsItem.title == news_data["title"]) & (NewsItem.company_id == company.id))
             ).first()
             if existing:
+                self.remember_article(db, company.id, news_data["url"], news_data["title"])
+                continue
+
+            # Checked before classifying, not after: an article already seen
+            # must not cost another Claude call. Deleting a news item used
+            # to make the next run treat it as new and put it straight back.
+            if self.already_seen(db, company.id, news_data["url"], news_data["title"]):
+                already_seen += 1
                 continue
 
             # A failed AI classification must NOT lose the article: the news
@@ -332,6 +393,9 @@ class NewsSearcher:
                 print(f"[NewsSearcher] Skipped duplicate news item: {e}")
                 continue
 
+            self.remember_article(db, company.id, news_data["url"], news_data["title"])
+            db.commit()
+
             saved_items.append(news_item)
 
         if off_topic:
@@ -339,7 +403,10 @@ class NewsSearcher:
                 f"[NewsSearcher] {company.company_name}: {off_topic} notizie scartate "
                 f"(non parlano dell'azienda). Le trovi con il filtro 'Rifiutate'."
             )
+        if already_seen:
+            print(f"[NewsSearcher] {company.company_name}: {already_seen} notizie gia' viste in passato, saltate")
         self.last_off_topic = off_topic
+        self.last_already_seen = already_seen
 
         return saved_items
 

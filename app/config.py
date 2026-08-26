@@ -51,6 +51,19 @@ class Settings:
     NEWS_LANGUAGE: str = os.getenv("NEWS_LANGUAGE", "it")
     NEWS_COUNTRY: str = os.getenv("NEWS_COUNTRY", "IT")
 
+    # How far back each search looks. One setting for every provider: they
+    # used to disagree (30 days for Google News and APITube, 3 months for
+    # GDELT), so the same run covered different periods depending on which
+    # source answered. Articles already seen are skipped anyway, so a wider
+    # window costs little after the first run.
+    NEWS_SEARCH_DAYS: int = int(os.getenv("NEWS_SEARCH_DAYS", "30"))
+
+    # Remember every article ever offered, so one deleted from the archive
+    # is not proposed again at the next run (and not re-classified, which
+    # would also cost another Claude call). Cleared on purpose from
+    # Impostazioni > Manutenzione.
+    REMEMBER_DELETED_NEWS: bool = os.getenv("REMEMBER_DELETED_NEWS", "True").lower() == "true"
+
     # GDELT (free, no API key, always available)
     GDELT_ENABLED: bool = os.getenv("GDELT_ENABLED", "True").lower() == "true"
 
@@ -109,6 +122,16 @@ class Settings:
     # Confidence at or below this counts as "not about this company".
     # Confidence 1 is reserved for "not classified at all" and is excluded.
     MIN_CONFIDENCE_SCORE: int = int(os.getenv("MIN_CONFIDENCE_SCORE", "3"))
+
+    # Report branding. Editable from Impostazioni > Personalizza report.
+    BRAND_NAME: str = os.getenv("BRAND_NAME", "Customer Intelligence Report")
+    BRAND_COLOR: str = os.getenv("BRAND_COLOR", "#2c3e50")
+    REPORT_INTRO: str = os.getenv("REPORT_INTRO", "")
+    REPORT_FOOTER: str = os.getenv(
+        "REPORT_FOOTER",
+        "Report generato automaticamente da Customer Intelligence Monitor.",
+    )
+    REPORT_SHOW_SCORES: bool = os.getenv("REPORT_SHOW_SCORES", "True").lower() == "true"
 
     # Dashboard
     DASHBOARD_ITEMS_PER_PAGE: int = int(os.getenv("DASHBOARD_ITEMS_PER_PAGE", "20"))

@@ -75,3 +75,7 @@ yarn-error.log
 # Build artifacts
 dist/
 build/
+
+# Logo caricato dall'utente per i report (non va versionato)
+app/static/branding/*
+!app/static/branding/.gitkeep

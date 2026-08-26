@@ -90,7 +90,10 @@ class GDELTProvider(NewsSourceProvider):
             "maxrecords": settings.NEWS_MAX_RESULTS_PER_COMPANY,
             "format": "json",
             "sort": "datedesc",
-            "timespan": "3months",
+            # Same window as the other providers. GDELT's free DOC API caps
+            # the timespan at roughly three months, so a larger setting is
+            # clamped rather than silently rejected.
+            "timespan": f"{min(settings.NEWS_SEARCH_DAYS, 90)}d",
         }
 
         try:

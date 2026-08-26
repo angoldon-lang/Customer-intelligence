@@ -14,7 +14,7 @@ from app import __version__
 from app.config import settings
 from app.database import init_db, get_db
 from sqlalchemy import func
-from app.models import Company, Cluster, NewsItem, Report, MonitoringRun, NewsSource, CompanyCluster, ClusterRecipient, SearchLog, AppSetting
+from app.models import Company, Cluster, NewsItem, Report, MonitoringRun, NewsSource, CompanyCluster, ClusterRecipient, SearchLog, AppSetting, SeenArticle
 from app.services import settings_store
 from app.services import DataImporter, DataNormalizer, ClusterManager
 from app.services.classifier import NewsClassifier
@@ -988,9 +988,22 @@ def delete_news(status: str = None, ids: str = None, db: Session = Depends(get_d
     else:
         raise HTTPException(status_code=400, detail="Specifica status oppure ids")
 
+    # Record them before they go, so the next run doesn't offer them again.
+    # This also covers items stored before the ledger existed: they enter it
+    # at the moment they're deleted, which is exactly when it matters.
+    items = query.all()
+    for item in items:
+        NewsSearcher.remember_article(db, item.company_id, item.url, item.title)
+
     deleted = query.delete(synchronize_session=False)
     db.commit()
-    return {"deleted": deleted, "message": f"{deleted} notizie eliminate"}
+    return {
+        "deleted": deleted,
+        "message": (
+            f"{deleted} notizie eliminate. Non verranno riproposte alle prossime ricerche."
+            if settings.REMEMBER_DELETED_NEWS else f"{deleted} notizie eliminate"
+        ),
+    }
 
 
 @app.post("/api/news/{news_id}/reclassify")
@@ -1638,6 +1651,31 @@ def save_settings(payload: dict = Body(...), db: Session = Depends(get_db)):
     return {"saved": saved, "message": f"{len(saved)} impostazioni salvate"}
 
 
+@app.post("/api/admin/forget-seen-news")
+def forget_seen_news(company_id: int = None, db: Session = Depends(get_db)):
+    """
+    Empty the "already seen" ledger so deleted articles can be found again.
+
+    The escape hatch for the memory that keeps deleted news from coming
+    back: if something was removed by mistake, forgetting it lets the next
+    run pick it up. Pass company_id to forget only one company's history.
+    """
+    query = db.query(SeenArticle)
+    if company_id:
+        query = query.filter(SeenArticle.company_id == company_id)
+
+    deleted = query.delete(synchronize_session=False)
+    db.commit()
+
+    return {
+        "deleted": deleted,
+        "message": (
+            f"{deleted} notizie dimenticate: se vengono ritrovate, "
+            f"torneranno in archivio alla prossima ricerca."
+        ),
+    }
+
+
 @app.post("/api/admin/review-off-topic")
 def review_off_topic_news(apply: bool = False, db: Session = Depends(get_db)):
     """
@@ -1810,6 +1848,86 @@ def send_due_reports_now(force: bool = False, db: Session = Depends(get_db)):
     """
     from app.services.report_scheduler import send_due_reports
     return send_due_reports(db, force=force)
+
+
+@app.post("/api/branding/logo")
+async def upload_brand_logo(file: UploadFile = File(...), db: Session = Depends(get_db)):
+    """Upload the logo shown at the top of every report email."""
+    from app.services import branding
+
+    content = await file.read()
+    try:
+        saved = branding.save_logo(db, content, file.content_type, file.filename)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    return {"filename": saved, "message": "Logo caricato: comparira' in cima ai report."}
+
+
+@app.delete("/api/branding/logo")
+def delete_brand_logo(db: Session = Depends(get_db)):
+    """Remove the report logo."""
+    from app.services import branding
+
+    removed = branding.remove_logo(db)
+    return {
+        "removed": removed,
+        "message": "Logo rimosso" if removed else "Nessun logo da rimuovere",
+    }
+
+
+@app.get("/api/branding")
+def get_brand_settings(db: Session = Depends(get_db)):
+    """Current report branding, for the settings form."""
+    from app.services import branding
+
+    brand = branding.get_branding(db)
+    logo = brand.pop("logo_path", None)
+    brand.pop("logo_cid", None)
+    # The browser needs a URL, not a filesystem path.
+    brand["logo_url"] = f"/static/branding/{os.path.basename(logo)}" if logo else None
+    return brand
+
+
+@app.post("/api/reports/preview")
+def preview_report(cluster_id: int = None, db: Session = Depends(get_db)):
+    """
+    Render a report with the current branding, without saving or sending.
+
+    Lets the customisation be checked against a real report instead of
+    guessing what the email will look like.
+    """
+    from app.services.branding import get_branding
+
+    cluster = (
+        db.query(Cluster).filter_by(id=cluster_id).first() if cluster_id
+        else db.query(Cluster).filter_by(active=True).first()
+    )
+    if not cluster:
+        raise HTTPException(
+            status_code=400,
+            detail="Nessun cluster disponibile: creane uno per vedere l'anteprima.",
+        )
+
+    period_end = datetime.utcnow()
+    period_start = period_end - timedelta(days=7)
+
+    company_ids = [cc.company_id for cc in cluster.companies]
+    news_items = []
+    if company_ids:
+        news_items = (
+            db.query(NewsItem)
+            .filter(NewsItem.company_id.in_(company_ids))
+            .order_by(NewsItem.relevance_score.desc())
+            .limit(3)
+            .all()
+        )
+
+    generator = ReportGenerator()
+    html = generator._generate_html_report(
+        cluster, news_items, period_start, period_end, get_branding(db)
+    )
+    return {"cluster_name": cluster.cluster_name, "items": len(news_items), "html": html}
 
 
 @app.post("/api/email/test-smtp")

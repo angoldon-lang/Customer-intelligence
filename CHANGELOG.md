@@ -4,6 +4,44 @@ Tutte le modifiche rilevanti a questo progetto sono documentate in questo file.
 Il formato segue [Keep a Changelog](https://keepachangelog.com/) e il progetto
 usa [Semantic Versioning](https://semver.org/lang/it/).
 
+## [0.16.0] - 2026-08-26
+
+### Fixed
+- **Una notizia cancellata tornava alla ricerca successiva.** La deduplica
+  guardava solo la tabella delle notizie: cancellandone una, il run dopo la
+  trattava come nuova, la rimetteva in archivio e **la faceva riclassificare
+  a Claude una seconda volta**. Ora un registro delle notizie gia' viste
+  sopravvive alla cancellazione, e il controllo avviene **prima** della
+  classificazione, quindi non consuma crediti.
+  Il registro riconosce anche la stessa notizia ripresa da un'altra testata
+  (stesso titolo, URL diverso), va per azienda (due clienti possono
+  legittimamente comparire nello stesso articolo) e viene alimentato anche
+  al momento della cancellazione, cosi' copre le notizie salvate prima di
+  questa versione.
+  Via d'uscita se cancelli per sbaglio: **Impostazioni > Manutenzione >
+  "Dimentica notizie cancellate"**. Si disattiva con
+  `REMEMBER_DELETED_NEWS=False`.
+- **Le fonti cercavano su periodi diversi**: 30 giorni Google News e
+  APITube, **3 mesi** GDELT. Ora la finestra e' una sola per tutte.
+
+### Added
+- **Finestra di ricerca configurabile** (`NEWS_SEARCH_DAYS`, 30 giorni di
+  default) da Impostazioni. GDELT viene troncato a 90 giorni, che e' il
+  limite del suo servizio. Allargarla costa poco dopo la prima ricerca: le
+  notizie gia' viste vengono saltate senza essere riclassificate.
+- **Personalizzazione del report** in Impostazioni:
+  - **logo aziendale** (PNG/JPG/GIF, max 1 MB), allegato alla mail come
+    immagine inline con `Content-ID`. Non un `data:` URI ne' un link al
+    server locale: Gmail scarta le immagini `data:` e un indirizzo
+    `127.0.0.1` e' irraggiungibile per chi riceve la mail;
+  - **colore dell'intestazione**, accettato solo se esadecimale, visto che
+    finisce dritto nel CSS della mail;
+  - **titolo, testo di apertura e piè di pagina**;
+  - **punteggi mostrabili o nascondibili**, per una mail piu' sintetica
+    verso destinatari esterni;
+  - **anteprima** che apre il report reale con la personalizzazione
+    applicata, invece di doverlo indovinare.
+
 ## [0.15.0] - 2026-08-25
 
 ### Added
