@@ -4,6 +4,37 @@ Tutte le modifiche rilevanti a questo progetto sono documentate in questo file.
 Il formato segue [Keep a Changelog](https://keepachangelog.com/) e il progetto
 usa [Semantic Versioning](https://semver.org/lang/it/).
 
+## [0.17.0] - 2026-08-27
+
+### Added
+- **Log delle ricerche in Impostazioni**: l'esito di ogni azienda a ogni
+  ricerca — cosa e' stato trovato, con quali fonti, e l'errore quando
+  qualcosa non ha funzionato. Righe colorate per esito, conteggi per stato,
+  filtro per azienda e per esito, piu' lo **storico dei monitoraggi**
+  (quando, quante aziende, quante notizie, quanti errori, durata).
+- **Download CSV** del log ricerche e dello storico monitoraggi
+  (`GET /api/logs/export`). Generato con il modulo `csv`, non concatenando
+  stringhe: nomi azienda e messaggi d'errore contengono punti e virgola,
+  virgolette e a capo che romperebbero un file costruito a mano. Il BOM
+  iniziale fa aprire il file a Excel in UTF-8, senza accenti corrotti.
+
+### Changed
+- **Interfaccia rifatta.** Sistema di token (colori, spaziature, ombre) in
+  un solo punto invece di valori sparsi pagina per pagina, tipografia e
+  gerarchie riviste, tabelle e form piu' leggibili, barra laterale
+  raggruppata per aree (Anagrafica / Intelligence / Sistema).
+- **Icone SVG al posto delle emoji.** Le emoji cambiavano aspetto su ogni
+  sistema, non prendevano il colore del testo e non si allineavano al
+  testo. Ora sono simboli vettoriali definiti una volta sola e riusati:
+  restano nitidi a qualsiasi dimensione ed ereditano il colore.
+- I menu a tendina fuori dai `form-group` restavano quelli grezzi del
+  browser accanto a quelli formattati: ora ogni controllo ha lo stesso
+  aspetto, freccia inclusa.
+- I pulsanti che sono link (`<a class="btn">`) non compaiono piu'
+  sottolineati.
+- Corretti gli accenti in alcuni messaggi ("perche'" -> "perché",
+  "gia'" -> "già", "piu'" -> "più").
+
 ## [0.16.0] - 2026-08-26
 
 ### Fixed

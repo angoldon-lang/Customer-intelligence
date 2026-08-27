@@ -4,14 +4,14 @@
 
 {% block content %}
 <div class="page-title">
-    <h2>Copertura ricerca notizie</h2>
+    <h2><svg class="icon icon-lg"><use href="#i-scan"/></svg> Copertura ricerca notizie</h2>
     <p>Per ogni azienda: quando è stata cercata l'ultima volta, con quali fonti, e cosa è stato trovato (o perché no)</p>
 </div>
 
 <div class="card" id="workflow-card">
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-        <h3 style="margin: 0;">🧭 Flusso settimanale</h3>
-        <button type="button" class="btn btn-sm btn-primary" onclick="loadWorkflow()">↻ Ricontrolla</button>
+        <h3 style="margin: 0;"><svg class="icon"><use href="#i-compass"/></svg> Flusso settimanale</h3>
+        <button type="button" class="btn btn-sm btn-primary" onclick="loadWorkflow()"><svg class="icon"><use href="#i-refresh"/></svg> Ricontrolla</button>
     </div>
     <p style="color: #7f8c8d; font-size: 13px; margin-bottom: 14px;">
         Cosa manca perché ogni settimana il sistema cerchi, classifichi e invii da solo il report.
@@ -32,12 +32,12 @@
             <label style="display: block; margin-bottom: 5px; font-size: 12px; color: #7f8c8d;">Stato</label>
             <select id="status-filter">
                 <option value="">Tutti</option>
-                <option value="found">✓ Notizie trovate</option>
-                <option value="no_results">⚠ Nessun risultato</option>
-                <option value="blocked">⛔ Fonte bloccata</option>
-                <option value="error">✗ Errore</option>
-                <option value="skipped_ambiguous">🔍 Da arricchire (P.IVA/sito)</option>
-                <option value="never_searched">— Mai cercata</option>
+                <option value="found">Notizie trovate</option>
+                <option value="no_results">Nessun risultato</option>
+                <option value="blocked">Fonte bloccata</option>
+                <option value="error">Errore</option>
+                <option value="skipped_ambiguous">Da arricchire (P.IVA/sito)</option>
+                <option value="never_searched">Mai cercata</option>
             </select>
         </div>
     </div>
@@ -48,7 +48,7 @@
         <h3>Aziende</h3>
         <div>
             <span id="coverage-count" style="font-size: 14px; color: #7f8c8d; margin-right: 10px;">Caricamento...</span>
-            <button type="button" class="btn btn-sm btn-danger" onclick="clearLogs()">🧹 Pulisci errori</button>
+            <button type="button" class="btn btn-sm btn-danger" onclick="clearLogs()"><svg class="icon"><use href="#i-trash"/></svg> Pulisci errori</button>
         </div>
     </div>
 
@@ -65,7 +65,7 @@
         </thead>
         <tbody id="coverage-table">
             <tr>
-                <td colspan="5" style="text-align: center; color: #7f8c8d;">Caricamento...</td>
+                <td colspan="6" style="text-align: center; color: #7f8c8d;">Caricamento...</td>
             </tr>
         </tbody>
     </table>
@@ -80,12 +80,12 @@
 {% block scripts %}
 <script>
     const STATUS_LABELS = {
-        'found': { label: '✓ Trovate', badge: 'badge-success' },
-        'no_results': { label: '⚠ Nessun risultato', badge: 'badge-warning' },
-        'blocked': { label: '⛔ Fonte bloccata', badge: 'badge-danger' },
-        'error': { label: '✗ Errore', badge: 'badge-danger' },
-        'skipped_ambiguous': { label: '🔍 Da arricchire (P.IVA/sito)', badge: 'badge-warning' },
-        'never_searched': { label: '— Mai cercata', badge: 'badge-primary' },
+        'found': { label: 'Trovate', badge: 'badge-success' },
+        'no_results': { label: 'Nessun risultato', badge: 'badge-warning' },
+        'blocked': { label: 'Fonte bloccata', badge: 'badge-danger' },
+        'error': { label: 'Errore', badge: 'badge-danger' },
+        'skipped_ambiguous': { label: 'Da arricchire (P.IVA/sito)', badge: 'badge-warning' },
+        'never_searched': { label: 'Mai cercata', badge: 'badge-primary' },
     };
 
     async function loadCoverage() {
@@ -126,7 +126,7 @@
             // reporting a number from the last run.
             const archived = r.news_in_archive || 0;
             const newsCell = archived > 0
-                ? `<a href="/news?company_id=${r.company_id}" class="btn btn-sm btn-primary">${archived} notizie →</a>`
+                ? `<a href="/news?company_id=${r.company_id}" class="btn btn-sm btn-primary">${archived} notizie</a>`
                 : '0';
 
             // The quick path: approve everything still waiting for this
@@ -134,7 +134,7 @@
             const pending = r.news_pending || 0;
             const approveCell = pending > 0
                 ? `<button class="btn btn-sm btn-success" onclick="approveCompany(${r.company_id}, '${escapeAttr(r.company_name)}', ${pending})">
-                       ✓ Approva ${pending}
+                       <svg class="icon"><use href="#i-check"/></svg> Approva ${pending}
                    </button>`
                 : (r.news_approved
                     ? `<span style="color:#27ae60; font-size:12px;">${r.news_approved} approvate</span>`
@@ -246,7 +246,7 @@
             }
 
             stepsDiv.innerHTML = (data.steps || []).map((step, index) => {
-                const icon = step.done ? '✓' : '○';
+                const icon = step.done ? 'i-check' : 'i-clock';
                 const color = step.done ? '#27ae60' : '#e67e22';
                 const action = step.done
                     ? ''
@@ -254,7 +254,7 @@
 
                 return `
                     <div style="display:flex; align-items:center; gap:12px; padding:10px 0; border-bottom:1px solid #eee;">
-                        <div style="font-size:18px; color:${color}; width:20px;">${icon}</div>
+                        <div style="color:${color}; width:20px;"><svg class="icon"><use href="#${icon}"/></svg></div>
                         <div style="flex:1;">
                             <strong style="color:${step.done ? '#2c3e50' : '#e67e22'};">${index + 1}. ${step.title}</strong><br>
                             <small style="color:#7f8c8d;">${step.detail}</small>

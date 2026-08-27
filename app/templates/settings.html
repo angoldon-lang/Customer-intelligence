@@ -4,14 +4,14 @@
 
 {% block content %}
 <div class="page-title">
-    <h2>Configurazione sistema</h2>
+    <h2><svg class="icon icon-lg"><use href="#i-sliders"/></svg> Configurazione sistema</h2>
     <p>Configura API, email, scheduler e impostazioni generali</p>
 </div>
 
-<div style="display: grid; grid-template-columns: 1fr; gap: 20px; max-width: 600px;">
+<div style="display: grid; grid-template-columns: 1fr; gap: 20px; max-width: 860px;">
 
     <div class="card">
-        <h3>🔑 API Claude</h3>
+        <h3><svg class="icon"><use href="#i-key"/></svg> API Claude</h3>
         <div id="api-status" style="padding: 15px; background: #fff3cd; border-radius: 4px; margin-bottom: 15px;">
             Verificando...
         </div>
@@ -21,13 +21,13 @@
                 <input type="password" id="api-key" placeholder="sk-ant-...">
                 <small style="color: #7f8c8d;">Sarà salvato in .env in modo sicuro</small>
             </div>
-            <button type="button" class="btn btn-primary" onclick="testAPI()">🧪 Test API</button>
-            <button type="submit" class="btn btn-success">💾 Salva</button>
+            <button type="button" class="btn btn-primary" onclick="testAPI()"><svg class="icon"><use href="#i-play"/></svg> Test API</button>
+            <button type="submit" class="btn btn-success"><svg class="icon"><use href="#i-check"/></svg> Salva</button>
         </form>
     </div>
 
     <div class="card">
-        <h3>🔒 Accesso amministratore</h3>
+        <h3><svg class="icon"><use href="#i-lock"/></svg> Accesso amministratore</h3>
         <form id="password-form">
             <div class="form-group">
                 <label>Utente</label>
@@ -50,13 +50,13 @@
                 <input type="password" id="new-password-confirm" autocomplete="new-password" required>
             </div>
 
-            <button type="submit" class="btn btn-success">💾 Cambia password</button>
+            <button type="submit" class="btn btn-success"><svg class="icon"><use href="#i-check"/></svg> Cambia password</button>
             <a href="/logout" class="btn btn-danger" style="text-decoration: none;">Esci</a>
         </form>
     </div>
 
     <div class="card">
-        <h3>📧 Configurazione Email (SMTP)</h3>
+        <h3><svg class="icon"><use href="#i-mail"/></svg> Configurazione Email (SMTP)</h3>
         <form id="smtp-form">
             <div class="form-group">
                 <label>Provider</label>
@@ -113,13 +113,13 @@
                 </small>
             </div>
 
-            <button type="button" class="btn btn-primary" onclick="testSMTP()">🧪 Test SMTP</button>
-            <button type="submit" class="btn btn-success">💾 Salva</button>
+            <button type="button" class="btn btn-primary" onclick="testSMTP()"><svg class="icon"><use href="#i-play"/></svg> Test SMTP</button>
+            <button type="submit" class="btn btn-success"><svg class="icon"><use href="#i-check"/></svg> Salva</button>
         </form>
     </div>
 
     <div class="card">
-        <h3>🎨 Personalizza il report</h3>
+        <h3><svg class="icon"><use href="#i-palette"/></svg> Personalizza il report</h3>
         <small style="color: #7f8c8d; display: block; margin-bottom: 15px;">
             Logo, colore e testi che compaiono nella mail inviata ai destinatari.
         </small>
@@ -173,13 +173,13 @@
                 <small style="color: #7f8c8d;">Toglili per una mail più sintetica verso destinatari esterni.</small>
             </div>
 
-            <button type="submit" class="btn btn-success">💾 Salva</button>
-            <button type="button" class="btn btn-primary" onclick="previewReport()">👁️ Anteprima</button>
+            <button type="submit" class="btn btn-success"><svg class="icon"><use href="#i-check"/></svg> Salva</button>
+            <button type="button" class="btn btn-primary" onclick="previewReport()"><svg class="icon"><use href="#i-eye"/></svg> Anteprima</button>
         </form>
     </div>
 
     <div class="card">
-        <h3>📡 Fonti notizie</h3>
+        <h3><svg class="icon"><use href="#i-rss"/></svg> Fonti notizie</h3>
         <small style="color: #7f8c8d; display: block; margin-bottom: 12px;">
             Le fonti vengono interrogate nell'ordine mostrato. Usa ▲▼ per cambiarlo:
             metti per prime quelle che danno i risultati migliori sulla tua anagrafica.
@@ -201,12 +201,12 @@
                 <label>URL feed RSS</label>
                 <input type="url" id="rss-url" placeholder="https://www.example.com/rss.xml" required>
             </div>
-            <button type="submit" class="btn btn-success">➕ Aggiungi fonte RSS</button>
+            <button type="submit" class="btn btn-success"><svg class="icon"><use href="#i-plus"/></svg> Aggiungi fonte RSS</button>
         </form>
     </div>
 
     <div class="card">
-        <h3>Scheduler monitoraggio</h3>
+        <h3><svg class="icon"><use href="#i-clock"/></svg> Scheduler monitoraggio</h3>
         <div id="scheduler-status" style="padding: 12px; background: #fff3cd; border-radius: 4px; margin-bottom: 15px; color: #856404;">
             Caricamento stato...
         </div>
@@ -240,7 +240,7 @@
     </div>
 
     <div class="card">
-        <h3>📊 Filtri di default</h3>
+        <h3><svg class="icon"><use href="#i-sliders"/></svg> Filtri di default</h3>
         <form id="filters-form">
             <div class="form-group">
                 <label>Tipo azienda di default (import)</label>
@@ -298,33 +298,77 @@
                 </select>
             </div>
 
-            <button type="submit" class="btn btn-success">💾 Salva</button>
+            <button type="submit" class="btn btn-success"><svg class="icon"><use href="#i-check"/></svg> Salva</button>
         </form>
     </div>
 
     <div class="card">
-        <h3>🗑️ Manutenzione</h3>
-        <div style="display: flex; gap: 10px;">
-            <button type="button" class="btn btn-primary btn-sm" onclick="fixNewsUrls()">
-                🔗 Correggi link notizie
-            </button>
-            <button type="button" class="btn btn-primary btn-sm" onclick="reviewOffTopic()">
-                🎯 Rivedi notizie non pertinenti
-            </button>
-            <button type="button" class="btn btn-primary btn-sm" onclick="forgetSeen()">
-                ↩️ Dimentica notizie cancellate
-            </button>
-            <button type="button" class="btn btn-danger btn-sm" onclick="cleanupDatabase()">
-                🧹 Pulisci database
-            </button>
-            <button type="button" class="btn btn-danger btn-sm" onclick="resetSystem()">
-                🔄 Reset sistema
-            </button>
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+            <h3 style="margin: 0;"><svg class="icon"><use href="#i-list"/></svg> Log delle ricerche</h3>
+            <div style="display: flex; gap: 8px;">
+                <button type="button" class="btn btn-sm btn-ghost" onclick="loadLogs()">
+                    <svg class="icon"><use href="#i-refresh"/></svg> Aggiorna
+                </button>
+                <a class="btn btn-sm btn-primary" href="/api/logs/export?kind=search" download>
+                    <svg class="icon"><use href="#i-download"/></svg> Scarica CSV
+                </a>
+            </div>
+        </div>
+        <small style="color: var(--ink-faint); display: block; margin: 4px 0 14px;">
+            Esito di ogni azienda a ogni ricerca: cosa è stato trovato, con quali fonti, e l'errore quando qualcosa non ha funzionato.
+        </small>
+
+        <div id="log-summary" style="display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 14px;"></div>
+
+        <div class="search-box" style="margin-bottom: 12px;">
+            <input type="text" id="log-search" placeholder="Filtra per azienda...">
+            <select id="log-status">
+                <option value="">Tutti gli esiti</option>
+                <option value="found">Notizie trovate</option>
+                <option value="no_results">Nessun risultato</option>
+                <option value="blocked">Fonte bloccata</option>
+                <option value="error">Errore</option>
+                <option value="skipped_ambiguous">Saltata (manca P.IVA/sito)</option>
+            </select>
+        </div>
+
+        <div class="log-view" id="log-view">Caricamento...</div>
+
+        <h4 style="margin: 20px 0 8px; display: flex; align-items: center; gap: 7px;">
+            <svg class="icon icon-sm"><use href="#i-clock"/></svg> Storico monitoraggi
+        </h4>
+        <div style="display: flex; justify-content: flex-end; margin-bottom: 8px;">
+            <a class="btn btn-sm btn-ghost" href="/api/logs/export?kind=runs" download>
+                <svg class="icon"><use href="#i-download"/></svg> Scarica CSV
+            </a>
+        </div>
+        <div style="overflow-x: auto;">
+            <table class="table" style="margin: 0;">
+                <thead>
+                    <tr>
+                        <th>Avvio</th><th>Durata</th><th>Aziende</th><th>Notizie</th><th>Errori</th><th>Stato</th>
+                    </tr>
+                </thead>
+                <tbody id="runs-table">
+                    <tr><td colspan="6" style="text-align:center; color: var(--ink-faint);">Caricamento...</td></tr>
+                </tbody>
+            </table>
         </div>
     </div>
 
     <div class="card">
-        <h3>📋 Info sistema</h3>
+        <h3><svg class="icon"><use href="#i-tools"/></svg> Manutenzione</h3>
+        <div style="display: flex; gap: 10px;">
+            <button type="button" class="btn btn-primary btn-sm" onclick="fixNewsUrls()"><svg class="icon"><use href="#i-link"/></svg> Correggi link notizie</button>
+            <button type="button" class="btn btn-primary btn-sm" onclick="reviewOffTopic()"><svg class="icon"><use href="#i-target"/></svg> Rivedi notizie non pertinenti</button>
+            <button type="button" class="btn btn-primary btn-sm" onclick="forgetSeen()"><svg class="icon"><use href="#i-undo"/></svg> Dimentica notizie cancellate</button>
+            <button type="button" class="btn btn-danger btn-sm" onclick="cleanupDatabase()"><svg class="icon"><use href="#i-trash"/></svg> Pulisci database</button>
+            <button type="button" class="btn btn-danger btn-sm" onclick="resetSystem()"><svg class="icon"><use href="#i-refresh"/></svg> Reset sistema</button>
+        </div>
+    </div>
+
+    <div class="card">
+        <h3><svg class="icon"><use href="#i-info"/></svg> Info sistema</h3>
         <table class="table" style="margin: 0;">
             <tr>
                 <td><strong>Versione app:</strong></td>
@@ -529,7 +573,7 @@
                     </div>
                     <div>
                         <button type="button" class="btn btn-sm ${s.enabled ? 'btn-success' : 'btn-danger'}" onclick="toggleRSSSource(${s.id})">${s.enabled ? 'Attiva' : 'Disattiva'}</button>
-                        <button type="button" class="btn btn-sm btn-danger" onclick="deleteRSSSource(${s.id})">🗑️</button>
+                        <button type="button" class="btn btn-sm btn-danger" onclick="deleteRSSSource(${s.id})" title="Rimuovi"><svg class="icon"><use href="#i-trash"/></svg></button>
                     </div>
                 </div>
             `).join('');
@@ -949,6 +993,100 @@
         }
     }
 
+    // --- log delle ricerche ------------------------------------------
+
+    const LOG_TONE = {
+        found: 'line-ok', no_results: '', blocked: 'line-warn',
+        error: 'line-err', skipped_ambiguous: 'line-warn',
+    };
+
+    async function loadLogs() {
+        const view = document.getElementById('log-view');
+        const status = value('log-status');
+        const search = value('log-search');
+
+        try {
+            const params = new URLSearchParams({ limit: 300 });
+            if (status) params.set('status', status);
+            if (search) params.set('search', search);
+
+            const data = await (await fetch('/api/logs?' + params)).json();
+
+            document.getElementById('log-summary').innerHTML = (data.by_status || [])
+                .map(s => {
+                    const cls = s.status === 'found' ? 'badge-success'
+                              : s.status === 'error' ? 'badge-danger'
+                              : s.status === 'no_results' ? 'badge-neutral' : 'badge-warning';
+                    return `<span class="badge ${cls}">${escapeHtml(s.label)}: ${s.count}</span>`;
+                }).join('');
+
+            if (!data.entries.length) {
+                view.textContent = 'Nessuna riga di log. Esegui un monitoraggio per popolarlo.';
+                return;
+            }
+
+            view.innerHTML = data.entries.map(e => {
+                const when = e.searched_at
+                    ? new Date(e.searched_at).toLocaleString('it-IT', {
+                        day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+                    : '';
+                const detail = e.error_message || e.providers_detail || '';
+                const found = e.articles_found ? ` (${e.articles_found})` : '';
+                return `<div class="${LOG_TONE[e.status] || ''}">`
+                     + `<span class="line-time">${when}</span> `
+                     + `${escapeHtml(e.company_name)} — ${escapeHtml(e.label)}${found}`
+                     + (detail ? ` · ${escapeHtml(detail)}` : '')
+                     + `</div>`;
+            }).join('');
+        } catch (error) {
+            view.textContent = 'Errore nel caricamento del log: ' + error.message;
+        }
+    }
+
+    async function loadRuns() {
+        const tbody = document.getElementById('runs-table');
+        try {
+            const data = await (await fetch('/api/logs/runs?limit=20')).json();
+
+            if (!data.runs.length) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color: var(--ink-faint);">Nessun monitoraggio eseguito.</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = data.runs.map(r => {
+                const started = r.started_at ? new Date(r.started_at).toLocaleString('it-IT') : '-';
+                const duration = r.duration_seconds != null
+                    ? (r.duration_seconds >= 60
+                        ? `${Math.round(r.duration_seconds / 60)} min`
+                        : `${r.duration_seconds}s`)
+                    : '-';
+                const errors = r.errors_count
+                    ? `<span class="badge badge-danger">${r.errors_count}</span>`
+                    : '0';
+                return `<tr>
+                    <td>${started}</td><td>${duration}</td>
+                    <td>${r.companies_processed}</td><td><strong>${r.news_found}</strong></td>
+                    <td>${errors}</td>
+                    <td><span class="badge badge-neutral">${escapeHtml(r.status || '-')}</span></td>
+                </tr>`;
+            }).join('');
+        } catch (error) {
+            console.error('Error loading runs:', error);
+        }
+    }
+
+    function escapeHtml(value) {
+        const div = document.createElement('div');
+        div.textContent = value == null ? '' : String(value);
+        return div.innerHTML;
+    }
+
+    document.getElementById('log-status').addEventListener('change', loadLogs);
+    document.getElementById('log-search').addEventListener('input', (() => {
+        let timer;
+        return () => { clearTimeout(timer); timer = setTimeout(loadLogs, 350); };
+    })());
+
     // --- personalizzazione report -----------------------------------
 
     async function loadBranding() {
@@ -1110,6 +1248,8 @@
     loadSettings();
     loadBranding();
     loadCurrentUser();
+    loadLogs();
+    loadRuns();
     checkAPIStatus();
     checkSchedulerStatus();
     loadProvidersStatus();

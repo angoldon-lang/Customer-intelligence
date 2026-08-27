@@ -4,14 +4,14 @@
 
 {% block content %}
 <div class="page-title">
-    <h2>Aziende da monitorare</h2>
+    <h2><svg class="icon icon-lg"><use href="#i-building"/></svg> Aziende da monitorare</h2>
     <p>Gestisci il database delle aziende</p>
 </div>
 
 <div class="card">
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
         <h3>Elenco aziende</h3>
-        <a href="/upload" class="btn btn-primary btn-sm">+ Importa aziende</a>
+        <a href="/upload" class="btn btn-primary btn-sm"><svg class="icon"><use href="#i-plus"/></svg> Importa aziende</a>
     </div>
 
     <div class="search-box">
@@ -36,14 +36,14 @@
     <div id="bulk-bar" style="display: none; align-items: center; gap: 8px; flex-wrap: wrap;
          padding: 12px; margin-bottom: 15px; background: #eaf4fb; border-radius: 4px;">
         <strong style="font-size: 14px;"><span id="bulk-count">0</span> selezionate:</strong>
-        <button class="btn btn-sm btn-success" onclick="bulkStatus('Attiva')">▶ Riattiva monitoraggio</button>
-        <button class="btn btn-sm btn-warning" onclick="bulkStatus('Pausa')">⏸ Metti in pausa</button>
-        <button class="btn btn-sm btn-warning" onclick="bulkStatus('Archiviata')">📦 Archivia</button>
+        <button class="btn btn-sm btn-success" onclick="bulkStatus('Attiva')"><svg class="icon"><use href="#i-play"/></svg> Riattiva monitoraggio</button>
+        <button class="btn btn-sm btn-warning" onclick="bulkStatus('Pausa')"><svg class="icon"><use href="#i-pause"/></svg> Metti in pausa</button>
+        <button class="btn btn-sm btn-warning" onclick="bulkStatus('Archiviata')"><svg class="icon"><use href="#i-archive"/></svg> Archivia</button>
         <select id="bulk-cluster" style="max-width: 220px;">
             <option value="">Aggiungi a cluster...</option>
         </select>
-        <button class="btn btn-sm btn-primary" onclick="bulkCluster()">➕ Aggiungi</button>
-        <button class="btn btn-sm btn-danger" onclick="bulkDelete()" style="margin-left: auto;">🗑️ Elimina</button>
+        <button class="btn btn-sm btn-primary" onclick="bulkCluster()"><svg class="icon"><use href="#i-plus"/></svg> Aggiungi</button>
+        <button class="btn btn-sm btn-danger" onclick="bulkDelete()" style="margin-left: auto;"><svg class="icon"><use href="#i-trash"/></svg> Elimina</button>
     </div>
 
     <table class="table">
@@ -188,7 +188,7 @@
                     <small style="color:#7f8c8d;">${hint}</small>
                 </td>
                 <td>${c.company_email || '-'}</td>
-                <td>${c.website ? `<a href="${c.website}" target="_blank" style="color: #3498db;">🔗</a>` : '-'}</td>
+                <td>${c.website ? `<a href="${c.website}" target="_blank" title="Apri il sito"><svg class="icon icon-sm"><use href="#i-external"/></svg></a>` : '<span style="color:var(--ink-faint)">-</span>'}</td>
                 <td>${c.account_owner || '-'}</td>
                 <td>
                     <button class="btn btn-sm btn-primary" onclick="openEditModal(${c.id})">Modifica</button>

@@ -4,7 +4,7 @@
 
 {% block content %}
 <div class="page-title">
-    <h2>Notizie trovate</h2>
+    <h2><svg class="icon icon-lg"><use href="#i-news"/></svg> Notizie trovate</h2>
     <p>Visualizza, filtra e approva le notizie sulle aziende</p>
 </div>
 
@@ -58,9 +58,9 @@
 
     <div id="bulk-bar" style="display:none; align-items:center; gap:10px; flex-wrap:wrap; padding:12px; background:#eef5fd; border-radius:4px; margin-bottom:15px;">
         <strong id="bulk-count">0 selezionate</strong>
-        <button type="button" class="btn btn-sm btn-success" onclick="bulkStatus('Approved')">✓ Approva selezionate</button>
-        <button type="button" class="btn btn-sm btn-danger" onclick="bulkStatus('Rejected')">✗ Rifiuta selezionate</button>
-        <button type="button" class="btn btn-sm btn-danger" onclick="bulkDelete()">🗑️ Elimina selezionate</button>
+        <button type="button" class="btn btn-sm btn-success" onclick="bulkStatus('Approved')"><svg class="icon"><use href="#i-check"/></svg> Approva selezionate</button>
+        <button type="button" class="btn btn-sm btn-danger" onclick="bulkStatus('Rejected')"><svg class="icon"><use href="#i-x"/></svg> Rifiuta selezionate</button>
+        <button type="button" class="btn btn-sm btn-danger" onclick="bulkDelete()"><svg class="icon"><use href="#i-trash"/></svg> Elimina selezionate</button>
         <button type="button" class="btn btn-sm btn-primary" onclick="clearSelection()">Deseleziona</button>
     </div>
 
@@ -69,7 +69,7 @@
             <input type="checkbox" id="select-all" onchange="toggleSelectAll(this.checked)"> Seleziona tutte le notizie visibili
         </label>
         <button type="button" class="btn btn-sm btn-danger" onclick="deleteRejected()" style="margin-left:auto;">
-            🗑️ Elimina tutte le rifiutate
+            <svg class="icon"><use href="#i-trash"/></svg> Elimina tutte le rifiutate
         </button>
     </div>
 
@@ -240,7 +240,7 @@
                         const summary = cleanSummary(n.summary, n.title);
                         return summary ? `<p class="news-card__summary">${escapeHtml(summary)}</p>` : '';
                     })()}
-                    ${n.why_it_matters ? `<p class="news-card__why">💡 ${escapeHtml(n.why_it_matters)}</p>` : ''}
+                    ${n.why_it_matters ? `<p class="news-card__why"><svg class="icon icon-sm"><use href="#i-info"/></svg> ${escapeHtml(n.why_it_matters)}</p>` : ''}
 
                     <div class="news-card__tags">
                         <span class="badge ${statusBadges[n.status] || 'badge-primary'}">${statusLabels[n.status] || n.status}</span>
@@ -250,11 +250,11 @@
                     </div>
 
                     <div class="news-card__actions">
-                        <button type="button" class="btn btn-sm btn-primary" onclick="openReassign(${n.id})">🏢 Cambia azienda</button>
-                        <button type="button" class="btn btn-sm btn-primary" onclick="reclassifyNews(${n.id})">↻ Riclassifica</button>
-                        <button type="button" class="btn btn-sm btn-success" onclick="approveNews(${n.id})">✓ Approva</button>
-                        <button type="button" class="btn btn-sm btn-danger" onclick="rejectNews(${n.id})">✗ Rifiuta</button>
-                        <a href="${url}" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-primary">→ Leggi</a>
+                        <button type="button" class="btn btn-sm btn-primary" onclick="openReassign(${n.id})"><svg class="icon"><use href="#i-building"/></svg> Cambia azienda</button>
+                        <button type="button" class="btn btn-sm btn-primary" onclick="reclassifyNews(${n.id})"><svg class="icon"><use href="#i-refresh"/></svg> Riclassifica</button>
+                        <button type="button" class="btn btn-sm btn-success" onclick="approveNews(${n.id})"><svg class="icon"><use href="#i-check"/></svg> Approva</button>
+                        <button type="button" class="btn btn-sm btn-danger" onclick="rejectNews(${n.id})"><svg class="icon"><use href="#i-x"/></svg> Rifiuta</button>
+                        <a href="${url}" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-primary"><svg class="icon"><use href="#i-external"/></svg> Leggi</a>
                     </div>
                 </article>
             `;

@@ -1,7 +1,7 @@
 """FastAPI application entry point."""
 
 from fastapi import FastAPI, UploadFile, File, Depends, HTTPException, Request, Body, Form
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from urllib.parse import quote
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -224,7 +224,7 @@ def create_admin(
     from app.services import auth
 
     if auth.is_configured(db):
-        raise HTTPException(status_code=403, detail="Amministratore gia' configurato")
+        raise HTTPException(status_code=403, detail="Amministratore già configurato")
 
     problem = auth.password_problem(password, password_confirm)
     if problem:
@@ -529,7 +529,7 @@ def bulk_update_company_status(payload: dict = Body(...), db: Session = Depends(
         "status": status,
         "message": (
             f"{updated} aziende impostate su '{status}': "
-            + ("rientrano nel monitoraggio." if monitored else "non verranno piu' cercate.")
+            + ("rientrano nel monitoraggio." if monitored else "non verranno più cercate.")
         ),
     }
 
@@ -569,7 +569,7 @@ def bulk_assign_cluster(payload: dict = Body(...), db: Session = Depends(get_db)
         "skipped": len(ids) - added,
         "message": (
             f"{added} aziende aggiunte a '{cluster.cluster_name}'"
-            + (f" ({len(ids) - added} erano gia' presenti)" if len(ids) - added else "")
+            + (f" ({len(ids) - added} erano già presenti)" if len(ids) - added else "")
         ),
     }
 
@@ -1206,9 +1206,9 @@ def start_monitoring(
         settings.SCHEDULER_CHECK_INTERVAL_HOURS or 24
     )
     if hours < 1:
-        raise HTTPException(status_code=400, detail="L'intervallo minimo e' 1 ora")
+        raise HTTPException(status_code=400, detail="L'intervallo minimo è 1 ora")
     if hours > 168:
-        raise HTTPException(status_code=400, detail="L'intervallo massimo e' 168 ore (una settimana)")
+        raise HTTPException(status_code=400, detail="L'intervallo massimo è 168 ore (una settimana)")
 
     settings_store.save_settings(db, {
         "SCHEDULER_ENABLED": True,
@@ -1484,10 +1484,10 @@ def get_workflow_status(db: Session = Depends(get_db)):
         "missing_count": len(missing),
         "clusters_due_now": due_now,
         "summary": (
-            "Il flusso settimanale e' completo: le notizie vengono cercate, "
+            "Il flusso settimanale è completo: le notizie vengono cercate, "
             "approvate e inviate ai destinatari."
             if not missing else
-            f"{len(missing)} passaggi da completare perche' il flusso giri da solo."
+            f"{len(missing)} passaggi da completare perché il flusso giri da solo."
         ),
     }
 
@@ -1651,6 +1651,165 @@ def save_settings(payload: dict = Body(...), db: Session = Depends(get_db)):
     return {"saved": saved, "message": f"{len(saved)} impostazioni salvate"}
 
 
+SEARCH_LOG_LABELS = {
+    "found": "Notizie trovate",
+    "no_results": "Nessun risultato",
+    "blocked": "Fonte bloccata",
+    "error": "Errore",
+    "skipped_ambiguous": "Saltata (manca P.IVA/sito)",
+    "never_searched": "Mai cercata",
+}
+
+
+@app.get("/api/logs")
+def get_search_log(
+    limit: int = 200,
+    status: str = None,
+    search: str = None,
+    db: Session = Depends(get_db),
+):
+    """
+    Recent search outcomes, newest first, with a per-status tally.
+
+    One row per company per run: what was searched, on which sources, what
+    came back, and the error when something went wrong.
+    """
+    query = (
+        db.query(SearchLog, Company.company_name)
+        .join(Company, Company.id == SearchLog.company_id)
+    )
+    if status:
+        query = query.filter(SearchLog.status == status)
+    if search:
+        query = query.filter(Company.company_name.ilike(f"%{search}%"))
+
+    rows = query.order_by(SearchLog.searched_at.desc()).limit(min(limit, 2000)).all()
+
+    tally = dict(
+        db.query(SearchLog.status, func.count(SearchLog.id))
+        .group_by(SearchLog.status)
+        .all()
+    )
+
+    return {
+        "total": len(rows),
+        "stored": sum(tally.values()),
+        "by_status": [
+            {"status": key, "label": SEARCH_LOG_LABELS.get(key, key), "count": value}
+            for key, value in sorted(tally.items(), key=lambda kv: -kv[1])
+        ],
+        "entries": [
+            {
+                "id": log.id,
+                "searched_at": log.searched_at.isoformat() if log.searched_at else None,
+                "company_id": log.company_id,
+                "company_name": name,
+                "status": log.status,
+                "label": SEARCH_LOG_LABELS.get(log.status, log.status),
+                "articles_found": log.articles_found or 0,
+                "providers_detail": log.providers_detail,
+                "error_message": log.error_message,
+            }
+            for log, name in rows
+        ],
+    }
+
+
+@app.get("/api/logs/runs")
+def get_run_log(limit: int = 50, db: Session = Depends(get_db)):
+    """History of monitoring runs: when, how many companies, how many news."""
+    runs = (
+        db.query(MonitoringRun)
+        .order_by(MonitoringRun.started_at.desc())
+        .limit(min(limit, 500))
+        .all()
+    )
+
+    def duration(run):
+        if not (run.started_at and run.finished_at):
+            return None
+        return round((run.finished_at - run.started_at).total_seconds())
+
+    return {
+        "total": len(runs),
+        "runs": [
+            {
+                "id": r.id,
+                "started_at": r.started_at.isoformat() if r.started_at else None,
+                "finished_at": r.finished_at.isoformat() if r.finished_at else None,
+                "duration_seconds": duration(r),
+                "companies_processed": r.companies_processed or 0,
+                "news_found": r.news_found or 0,
+                "errors_count": r.errors_count or 0,
+                "status": r.status,
+            }
+            for r in runs
+        ],
+    }
+
+
+@app.get("/api/logs/export")
+def export_search_log(kind: str = "search", db: Session = Depends(get_db)):
+    """
+    Download the log as CSV (kind=search or kind=runs).
+
+    Written with the csv module rather than by joining strings: company
+    names and error messages contain commas, quotes and newlines, which
+    would corrupt a hand-built file.
+    """
+    import csv
+    import io
+
+    buffer = io.StringIO()
+    writer = csv.writer(buffer, delimiter=";")
+    stamp = datetime.utcnow().strftime("%Y%m%d-%H%M")
+
+    if kind == "runs":
+        writer.writerow([
+            "Inizio", "Fine", "Durata (s)", "Aziende", "Notizie", "Errori", "Stato",
+        ])
+        for r in db.query(MonitoringRun).order_by(MonitoringRun.started_at.desc()).all():
+            seconds = (
+                round((r.finished_at - r.started_at).total_seconds())
+                if r.started_at and r.finished_at else ""
+            )
+            writer.writerow([
+                r.started_at.strftime("%Y-%m-%d %H:%M:%S") if r.started_at else "",
+                r.finished_at.strftime("%Y-%m-%d %H:%M:%S") if r.finished_at else "",
+                seconds, r.companies_processed or 0, r.news_found or 0,
+                r.errors_count or 0, r.status or "",
+            ])
+        filename = f"monitoraggi-{stamp}.csv"
+    else:
+        writer.writerow([
+            "Data", "Azienda", "Esito", "Notizie trovate", "Dettaglio fonti", "Errore",
+        ])
+        rows = (
+            db.query(SearchLog, Company.company_name)
+            .join(Company, Company.id == SearchLog.company_id)
+            .order_by(SearchLog.searched_at.desc())
+            .all()
+        )
+        for log, name in rows:
+            writer.writerow([
+                log.searched_at.strftime("%Y-%m-%d %H:%M:%S") if log.searched_at else "",
+                name,
+                SEARCH_LOG_LABELS.get(log.status, log.status),
+                log.articles_found or 0,
+                log.providers_detail or "",
+                log.error_message or "",
+            ])
+        filename = f"log-ricerche-{stamp}.csv"
+
+    # BOM so Excel opens it as UTF-8 instead of mangling the accents.
+    payload = "﻿" + buffer.getvalue()
+    return Response(
+        content=payload,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @app.post("/api/admin/forget-seen-news")
 def forget_seen_news(company_id: int = None, db: Session = Depends(get_db)):
     """
@@ -1723,7 +1882,7 @@ def review_off_topic_news(apply: bool = False, db: Session = Depends(get_db)):
         "examples": examples,
         "message": (
             f"{len(off_topic)} notizie su {len(items)} spostate in 'Rifiutate': "
-            f"l'azienda non e' mai nominata."
+            f"l'azienda non è mai nominata."
             if apply else
             f"{len(off_topic)} notizie su {len(items)} non nominano mai l'azienda. "
             f"Rilancia con 'applica' per spostarle in 'Rifiutate'."
@@ -1861,7 +2020,7 @@ async def upload_brand_logo(file: UploadFile = File(...), db: Session = Depends(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    return {"filename": saved, "message": "Logo caricato: comparira' in cima ai report."}
+    return {"filename": saved, "message": "Logo caricato: comparirà in cima ai report."}
 
 
 @app.delete("/api/branding/logo")
