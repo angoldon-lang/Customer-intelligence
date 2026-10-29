@@ -7,12 +7,12 @@ pulita, farlo partire da solo all'avvio e tenerlo aggiornato.
 
 ## 1. Versione di Python
 
-**Va bene il Python della tua distribuzione: dalla 3.10 alla 3.13.** Non
+**Va bene il Python della tua distribuzione: dalla 3.10 alla 3.14.** Non
 serve installarne un altro, non serve aggiungere repository esterni.
 
-Le dipendenze sono state scelte per questo: su 3.11, 3.12 e 3.13
+Le dipendenze sono state scelte per questo: su 3.11, 3.12, 3.13 e 3.14
 l'installazione non compila niente e i 251 test passano (provato su tutte
-e tre). Su 3.10 i pacchetti precompilati esistono, ma non ho potuto
+e quattro). Su 3.10 i pacchetti precompilati esistono, ma non ho potuto
 eseguire l'applicazione per confermarlo.
 
 La tabella dice quale interprete trovi di serie; "provato" si riferisce a
@@ -22,7 +22,8 @@ quella versione di Python, non alla distribuzione nel suo insieme.
 |---|---|---|
 | Debian 12 "bookworm" | 3.11 | provato |
 | Ubuntu 24.04 LTS | 3.12 | provato |
-| Debian 13 / Ubuntu 25.x / Fedora 41+ | 3.13 | provato |
+| Debian 13 / Ubuntu 25.x / Fedora 41-42 | 3.13 | provato |
+| Ubuntu 26.04 LTS / Fedora 43+ | 3.14 | provato |
 | Ubuntu 22.04 LTS | 3.10 | dipendenze a posto, non eseguito |
 
 Controlla cosa hai:
@@ -363,9 +364,9 @@ versione nel nome non esiste sulla tua distribuzione, e non ti serve: usa
 **`Error: Please make sure the libxml2 and libxslt development packages are installed`**
 durante `pip install` → `pip` sta provando a compilare `lxml` perché non
 trova un pacchetto pronto per il tuo interprete. Controlla con
-`python3 --version` di essere nell'intervallo 3.10 → 3.13, e che il
+`python3 --version` di essere nell'intervallo 3.10 → 3.14, e che il
 `requirements.txt` sia aggiornato (`git pull`): le versioni precedenti alla
-0.17.2 fissavano `lxml==4.9.3`, che si ferma così su Python 3.13.
+0.17.2 fissavano `lxml==4.9.3`, che si ferma così dalla 3.13 in avanti.
 
 **`Address already in use`** → la porta è occupata:
 ```bash

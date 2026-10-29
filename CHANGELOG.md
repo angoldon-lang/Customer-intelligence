@@ -4,6 +4,25 @@ Tutte le modifiche rilevanti a questo progetto sono documentate in questo file.
 Il formato segue [Keep a Changelog](https://keepachangelog.com/) e il progetto
 usa [Semantic Versioning](https://semver.org/lang/it/).
 
+## [0.17.3] - 2026-10-29
+
+### Note
+- **Python 3.14 verificato.** Nessuna modifica al codice: i pin della
+  0.17.2 funzionano cosi' come sono. Per averne la certezza invece di
+  dedurlo dalla disponibilita' dei pacchetti, e' stato compilato CPython
+  3.14.0 dai sorgenti e l'applicazione e' stata eseguita su quello:
+  installazione senza compilazioni, 251 test passati, primo avvio con
+  redirect a `/setup`, creazione dell'amministratore, tutte le pagine
+  servite da uvicorn, export CSV, import di un file Excel con accenti,
+  creazione cluster con validazione dei parametri, avvio e arresto dello
+  scheduler. Intervallo supportato: 3.10 → 3.14.
+- Su 3.14 l'avviso di deprecazione di `datetime.utcnow()` e' molto piu'
+  rumoroso (11.750 occorrenze durante i test, contro 985 sulla 3.12).
+  Resta un avviso e non un errore, ma e' il segnale che la sostituzione
+  va pianificata: cambia i datetime da "naive" ad "aware" e tocca
+  confronti e valori gia' salvati, quindi va fatta in un intervento
+  dedicato con i test a copertura.
+
 ## [0.17.2] - 2026-10-29
 
 ### Fixed

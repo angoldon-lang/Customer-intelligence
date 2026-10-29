@@ -55,9 +55,9 @@ Costruire un agente software che monitori notizie e informazioni pubbliche relat
 > anche il servizio systemd per l'avvio automatico, i backup del database
 > in modalità WAL e la pubblicazione dietro HTTPS.
 >
-> **Versione di Python**: dalla 3.10 alla 3.13, cioè quella che trovi di
+> **Versione di Python**: dalla 3.10 alla 3.14, cioè quella che trovi di
 > serie su qualunque distribuzione recente. Provata eseguendo i test su
-> 3.11, 3.12 e 3.13.
+> 3.11, 3.12, 3.13 e 3.14.
 
 ### 1. Setup iniziale
 
