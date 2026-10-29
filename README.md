@@ -45,10 +45,19 @@ Costruire un agente software che monitori notizie e informazioni pubbliche relat
 ├── tests/                      # Test suite
 ├── requirements.txt
 ├── .env.example
+├── INSTALL-LINUX.md             # Installazione su Linux + systemd
 └── README.md
 ```
 
 ## Quick start - macOS
+
+> **Installi su Linux?** Segui [INSTALL-LINUX.md](INSTALL-LINUX.md): copre
+> anche il servizio systemd per l'avvio automatico, i backup del database
+> in modalità WAL e la pubblicazione dietro HTTPS.
+>
+> **Versione di Python**: serve la 3.11 o la 3.12. Con la 3.13
+> l'installazione delle dipendenze si interrompe (`lxml` non ha un
+> pacchetto precompilato per quella versione e prova a compilarsi).
 
 ### 1. Setup iniziale
 

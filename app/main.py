@@ -186,9 +186,15 @@ if os.path.exists("app/static"):
 # context dict lands where `name` is expected), which surfaces deep inside
 # Jinja2 as a baffling "TypeError: unhashable type: 'dict'". Detect which
 # signature is installed once, so page routes work either way.
+#
+# Only the oldest signature names its first parameter `name`; the versions
+# that want the request first either name it `request` or accept (*args,
+# **kwargs) and sort the arguments out at runtime. So anything that is not
+# `name` takes the request-first call: assuming the legacy one instead still
+# works but logs a DeprecationWarning on every page render.
 import inspect as _inspect
 _template_response_params = list(_inspect.signature(templates.TemplateResponse).parameters)
-_REQUEST_FIRST = bool(_template_response_params) and _template_response_params[0] == "request"
+_REQUEST_FIRST = bool(_template_response_params) and _template_response_params[0] != "name"
 
 
 def render(

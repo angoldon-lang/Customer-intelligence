@@ -4,6 +4,35 @@ Tutte le modifiche rilevanti a questo progetto sono documentate in questo file.
 Il formato segue [Keep a Changelog](https://keepachangelog.com/) e il progetto
 usa [Semantic Versioning](https://semver.org/lang/it/).
 
+## [0.17.1] - 2026-10-29
+
+### Added
+- **`INSTALL-LINUX.md`**: installazione da zero su Linux, con utente
+  dedicato, servizio systemd per l'avvio automatico, backup del database,
+  pubblicazione dietro HTTPS, procedura di aggiornamento e diagnostica.
+  Provata su Python 3.11 e 3.12 (dipendenze installate, 251 test passati,
+  primo avvio e creazione dell'amministratore verificati).
+
+### Fixed
+- **Su una macchina pulita `pytest` falliva 62 test.** `fastapi==0.104.1`
+  si porta dietro `starlette==0.27.0`, il cui `TestClient` non accetta
+  ancora `follow_redirects`: ogni test che costruisce un client si fermava
+  in fase di setup. Pin aggiornato a `fastapi==0.115.6` (starlette 0.41),
+  che lascia invariate le altre dipendenze. L'applicazione partiva
+  comunque: il problema era visibile solo a chi installava da zero e
+  lanciava i test.
+- Il rilevamento della firma di `Jinja2Templates.TemplateResponse`
+  riconosceva solo il parametro chiamato `request`, mentre le versioni
+  recenti di starlette dichiarano `(*args, **kwargs)`. Veniva quindi usata
+  la chiamata vecchia, che funziona ma registra un `DeprecationWarning` a
+  ogni pagina. Ora la discriminante e' il solo nome `name`, usato
+  unicamente dalla firma originale.
+
+### Note
+- Python 3.13 non e' ancora supportato: `lxml==4.9.3` non pubblica un
+  pacchetto precompilato per quella versione, quindi `pip` prova a
+  compilarlo e si interrompe. Servono Python 3.11 o 3.12.
+
 ## [0.17.0] - 2026-08-27
 
 ### Added
