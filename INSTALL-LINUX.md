@@ -3,56 +3,49 @@
 Guida per installare Customer Intelligence Monitor su una macchina Linux
 pulita, farlo partire da solo all'avvio e tenerlo aggiornato.
 
-I comandi sono stati provati su Python 3.11 e 3.12: con entrambi le
-dipendenze si installano senza compilare niente e i 251 test passano.
-
 ---
 
-## 1. Versione di Python: leggi questo prima
+## 1. Versione di Python
 
-**Serve Python 3.11 o 3.12. Con Python 3.13 l'installazione si ferma.**
+**Va bene il Python della tua distribuzione: dalla 3.10 alla 3.13.** Non
+serve installarne un altro, non serve aggiungere repository esterni.
 
-Il progetto usa `lxml==4.9.3`, che non pubblica un pacchetto precompilato
-per 3.13: `pip` prova a compilarlo dai sorgenti e si interrompe con
+Le dipendenze sono state scelte per questo: su 3.11, 3.12 e 3.13
+l'installazione non compila niente e i 251 test passano (provato su tutte
+e tre). Su 3.10 i pacchetti precompilati esistono, ma non ho potuto
+eseguire l'applicazione per confermarlo.
 
-```
-Building lxml version 4.9.3.
-Error: Please make sure the libxml2 and libxslt development packages are installed.
-```
+La tabella dice quale interprete trovi di serie; "provato" si riferisce a
+quella versione di Python, non alla distribuzione nel suo insieme.
 
-Non è un problema della tua macchina ed è inutile installare `libxml2-dev`
-per aggirarlo: subito dopo si fermerebbero anche `pandas` e `numpy`, che
-per 3.13 vogliono versioni più recenti di quelle fissate qui.
+| Distribuzione | Python di serie | |
+|---|---|---|
+| Debian 12 "bookworm" | 3.11 | provato |
+| Ubuntu 24.04 LTS | 3.12 | provato |
+| Debian 13 / Ubuntu 25.x / Fedora 41+ | 3.13 | provato |
+| Ubuntu 22.04 LTS | 3.10 | dipendenze a posto, non eseguito |
 
-Quindi, prima di tutto, controlla cosa hai:
+Controlla cosa hai:
 
 ```bash
 python3 --version
 ```
 
-| Distribuzione | Python di serie | Esito |
-|---|---|---|
-| Debian 12 "bookworm" | 3.11 | va bene così |
-| Ubuntu 24.04 LTS | 3.12 | va bene così |
-| Ubuntu 22.04 LTS | 3.10 | installa il 3.11 (vedi sotto) |
-| Fedora 40+ / Ubuntu 25.x | 3.13 | installa il 3.12 (vedi sotto) |
-
-Se ti serve affiancare una versione, l'originale di sistema **non va
-toccata** (ci girano pezzi della distribuzione): si installa a fianco.
-
-```bash
-# Ubuntu / Debian
-sudo add-apt-repository ppa:deadsnakes/ppa
-sudo apt update
-sudo apt install -y python3.12 python3.12-venv
-
-# Fedora / RHEL
-sudo dnf install -y python3.12
-```
+Serve soltanto la **3.9 o precedenti** (Debian 11, Ubuntu 20.04, CentOS 7)
+per dover installare un interprete più recente: `pydantic` non pubblica
+più pacchetti per la 3.9. Su quelle distribuzioni, se non vuoi
+aggiornarle, l'interprete si affianca con
+[`uv`](https://docs.astral.sh/uv/) (`uv python install 3.12`), che
+funziona su qualsiasi distribuzione — a differenza del PPA *deadsnakes*,
+che è solo per Ubuntu. La versione di sistema **non va rimossa né
+sostituita**: ci girano pezzi della distribuzione.
 
 ---
 
 ## 2. Pacchetti di sistema
+
+Se `python3 --version` ha risposto, Python c'è già e ti servono solo gli
+accessori:
 
 ```bash
 # Debian / Ubuntu
@@ -62,6 +55,18 @@ sudo apt install -y python3-venv python3-pip git sqlite3
 # Fedora / RHEL / Rocky
 sudo dnf install -y python3-pip git sqlite
 ```
+
+Se invece `python3` non esiste (immagini minime, container), aggiungi
+`python3` all'elenco:
+
+```bash
+sudo apt install -y python3 python3-venv python3-pip git sqlite3
+```
+
+> Attenzione a `sudo apt install python3.12`: il pacchetto con il numero
+> di versione nel nome esiste solo su alcune distribuzioni, e altrove
+> risponde `Unable to locate package python3.12`. Usa `python3`, che è
+> sempre quello giusto per la tua.
 
 Niente compilatori, niente librerie di sviluppo: tutte le dipendenze
 arrivano come pacchetti già compilati.
@@ -95,12 +100,9 @@ sudo -u cim git checkout claude/customer-intelligence-monitor-vzirll
 
 ## 5. Ambiente virtuale e dipendenze
 
-Usa l'interprete della versione scelta al paragrafo 1 (`python3`,
-`python3.11` o `python3.12`):
-
 ```bash
 cd /opt/customer-intelligence
-sudo -u cim python3.12 -m venv venv
+sudo -u cim python3 -m venv venv
 sudo -u cim ./venv/bin/pip install --upgrade pip
 sudo -u cim ./venv/bin/pip install -r requirements.txt
 ```
@@ -354,8 +356,16 @@ La versione installata si legge in **Impostazioni > Info sistema**.
 
 ## 12. Se qualcosa non va
 
+**`Unable to locate package python3.12`** → il pacchetto col numero di
+versione nel nome non esiste sulla tua distribuzione, e non ti serve: usa
+`python3`. Vedi i paragrafi 1 e 2.
+
 **`Error: Please make sure the libxml2 and libxslt development packages are installed`**
-durante `pip install` → stai usando Python 3.13. Vedi il paragrafo 1.
+durante `pip install` → `pip` sta provando a compilare `lxml` perché non
+trova un pacchetto pronto per il tuo interprete. Controlla con
+`python3 --version` di essere nell'intervallo 3.10 → 3.13, e che il
+`requirements.txt` sia aggiornato (`git pull`): le versioni precedenti alla
+0.17.2 fissavano `lxml==4.9.3`, che si ferma così su Python 3.13.
 
 **`Address already in use`** → la porta è occupata:
 ```bash

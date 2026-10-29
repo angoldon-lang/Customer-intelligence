@@ -4,6 +4,44 @@ Tutte le modifiche rilevanti a questo progetto sono documentate in questo file.
 Il formato segue [Keep a Changelog](https://keepachangelog.com/) e il progetto
 usa [Semantic Versioning](https://semver.org/lang/it/).
 
+## [0.17.2] - 2026-10-29
+
+### Fixed
+- **L'installazione ora funziona con il Python della distribuzione (3.10 →
+  3.13).** Prima si fermava su Python 3.13, che e' quello di serie su
+  Debian 13, Ubuntu 25.x e Fedora 41+: quattro dipendenze non avevano un
+  pacchetto precompilato per quella versione e `pip` tentava di
+  compilarle. Aggiornati `lxml` (4.9.3 → 6.1.3), `pandas` (2.2.0 → 2.3.3),
+  `pydantic` (2.5.0 → 2.14.2) e `sqlalchemy` (2.0.23 → 2.0.55).
+  Quest'ultimo era il meno visibile e il piu' bloccante: sulla 3.13 non
+  arrivava nemmeno a importarsi (`AssertionError: Class SQLCoreOperations
+  directly inherits TypingOnly but has additional attributes`), risolto a
+  monte dalla 2.0.31.
+- La guida Linux indicava il PPA *deadsnakes* anche per Debian, dove non
+  esiste, e consigliava `apt install python3.12`, che risponde `Unable to
+  locate package` su tutte le distribuzioni che non lo confezionano con
+  quel nome. Ora la guida usa il `python3` di sistema e spiega il caso in
+  cui serva davvero affiancare un interprete (solo 3.9 o precedenti).
+
+### Removed
+- `aiohttp` e `alembic` dalle dipendenze: non erano importati da nessun
+  punto del codice e non esiste alcuna configurazione Alembic nel
+  progetto (le modifiche allo schema sono applicate da
+  `_add_missing_columns()` all'avvio). `aiohttp` e' compilato, quindi era
+  anche uno dei pacchetti che bloccavano Python 3.13.
+
+### Note
+- Verificato su 3.11, 3.12 e 3.13: installazione senza compilazioni, 251
+  test passati, primo avvio con creazione dell'amministratore, tutte le
+  pagine servite da uvicorn e import di un file Excel con accenti.
+  Il limite inferiore e' 3.10, perche' `pydantic` non pubblica piu'
+  pacchetti per la 3.9.
+- Resta da sistemare, piu' avanti: il codice usa `datetime.utcnow()`, che
+  da Python 3.12 emette un avviso di deprecazione. Non e' un problema oggi
+  (l'avviso non compare a runtime), ma la sostituzione cambia i datetime
+  da "naive" a "aware" e va fatta in un passaggio dedicato, non dentro una
+  correzione all'installazione.
+
 ## [0.17.1] - 2026-10-29
 
 ### Added
