@@ -263,9 +263,20 @@ Caddy manda gli header `X-Forwarded-*` da sé.
 ```
 
 **Il tuo proxy deve servire HTTPS.** Il compose marca il cookie di
-sessione come "secure", quindi su HTTP il browser non lo rimanda e il
-login non riesce, senza messaggi d'errore chiari. Se davvero devi servire
-in HTTP (solo rete interna), aggiungi al `.env`:
+sessione come "secure": su HTTP il browser **non lo salva affatto**, e il
+login rimanda alla pagina di accesso senza nessun messaggio d'errore.
+Verificato con un browser vero su un nome di dominio: con il proxy in
+HTTPS si entra, con lo stesso proxy in HTTP puro il cookie non viene
+memorizzato e si torna a `/login`.
+
+Attenzione a come lo provi, perché è una trappola: su `localhost` e
+`127.0.0.1` i browser trattano l'origine come fidata e **accettano il
+cookie "secure" anche in HTTP**. Quindi una prova in locale riesce, e lo
+stesso proxy sul dominio vero fallisce. Prova sempre con il nome di
+dominio che userai.
+
+Se davvero devi servire in HTTP (solo rete interna, con un nome di
+dominio), aggiungi al `.env`:
 
 ```ini
 SESSION_COOKIE_SECURE=False
@@ -510,9 +521,12 @@ docker compose logs app | tail -30
 Il controllo di salute interroga `/login` ogni 30 secondi, con 20 secondi
 di tolleranza iniziale.
 
-**Entro ma vengo subito disconnesso, o il login non ha effetto** → il
-proxy davanti non manda `X-Forwarded-Proto: https`, oppure serve in HTTP
-mentre il cookie è "secure". Vedi la fine della variante B.
+**Il login rimanda alla pagina di accesso, senza errori** → il proxy
+davanti serve in HTTP, oppure non manda `X-Forwarded-Proto: https`. Il
+cookie di sessione è "secure" e il browser non lo salva. Si riconosce
+dagli strumenti di sviluppo del browser: dopo l'invio del modulo, fra i
+cookie non c'è `ci_session`. Vedi la fine della variante B — e non
+provarlo su `localhost`, dove funzionerebbe comunque.
 
 **Non riesco più a entrare** → si azzera l'utenza e l'app ripropone
 `/setup`:

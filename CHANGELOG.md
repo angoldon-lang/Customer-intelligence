@@ -4,6 +4,27 @@ Tutte le modifiche rilevanti a questo progetto sono documentate in questo file.
 Il formato segue [Keep a Changelog](https://keepachangelog.com/) e il progetto
 usa [Semantic Versioning](https://semver.org/lang/it/).
 
+## [0.18.2] - 2026-11-10
+
+### Note
+- **Variante "dietro un proxy esistente" verificata eseguendola**: stack
+  avviato con l'override, un solo container, porta pubblicata come
+  `127.0.0.1:8001->8001/tcp` e regola DNAT limitata a `127.0.0.1/32`
+  (quindi non raggiungibile dalla rete). Davanti e' stato messo un nginx
+  vero con la configurazione riportata in `DOCKER.md` e un certificato
+  autofirmato: creazione dell'amministratore, login, tutte le pagine,
+  export CSV e import di un file Excel con accenti.
+- Precisata la nota sul cookie di sessione in `DOCKER.md`, dopo averne
+  verificato il comportamento con un browser reale su un nome di dominio:
+  con il proxy in HTTPS si entra, con lo stesso proxy in HTTP puro il
+  browser **non salva** il cookie e il login rimanda a `/login` senza
+  alcun messaggio. Aggiunta la sfumatura che rende il problema
+  insidioso: su `localhost` e `127.0.0.1` i browser trattano l'origine
+  come fidata e accettano il cookie "secure" anche in HTTP, quindi una
+  prova in locale riesce e lo stesso proxy sul dominio vero fallisce.
+  (Anche `curl` lo accetta, percio' una verifica fatta solo con curl non
+  avrebbe mostrato nulla.)
+
 ## [0.18.1] - 2026-11-10
 
 ### Added
