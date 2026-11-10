@@ -1,0 +1,24 @@
+# Variante per una macchina che ha gia' un reverse proxy (nginx, Apache,
+# Traefik, un altro Caddy) sulle porte 80 e 443.
+#
+# Non avvia il proxy di questo progetto e pubblica l'applicazione su una
+# sola porta locale, a cui il tuo proxy inoltra le richieste.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.behind-proxy.yml up -d
+#
+# In DOCKER.md, "Porte gia' occupate", ci sono le righe da aggiungere alla
+# configurazione del proxy che hai gia'.
+
+services:
+  app:
+    ports:
+      # Legata a 127.0.0.1: raggiungibile dal reverse proxy che gira su
+      # questa macchina, non dalla rete. Cambia APP_PORT nel .env se la
+      # 8001 e' occupata.
+      - "127.0.0.1:${APP_PORT:-8001}:8001"
+
+  proxy:
+    # Un profilo che non viene mai richiesto: il servizio resta definito
+    # ma non parte, e le porte 80/443 non vengono toccate.
+    profiles:
+      - non-usare

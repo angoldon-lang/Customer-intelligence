@@ -4,6 +4,39 @@ Tutte le modifiche rilevanti a questo progetto sono documentate in questo file.
 Il formato segue [Keep a Changelog](https://keepachangelog.com/) e il progetto
 usa [Semantic Versioning](https://semver.org/lang/it/).
 
+## [0.18.1] - 2026-11-10
+
+### Added
+- **Porte pubblicate configurabili dal `.env`**, perche' su una macchina
+  con altri servizi la 80 e la 443 sono spesso gia' occupate:
+  `HTTP_PORT`, `HTTPS_PORT`, `HTTP_BIND` (per limitare l'ascolto a un
+  indirizzo, es. `127.0.0.1`) e `APP_PORT`. I valori predefiniti restano
+  80 e 443, quindi chi ha la macchina libera non cambia niente.
+- **`docker-compose.behind-proxy.yml`**: variante per una macchina che ha
+  gia' un reverse proxy (nginx, Apache, Traefik, un altro Caddy) sulle
+  porte 80 e 443. Non avvia il proxy di questo progetto — escluso con un
+  profilo che non viene mai richiesto — e pubblica l'applicazione solo su
+  `127.0.0.1:${APP_PORT}`, dove il proxy esistente la inoltra.
+  `DOCKER.md` riporta le righe da aggiungere per nginx, Caddy e Apache,
+  con `X-Forwarded-Proto` e il limite di dimensione per l'import Excel.
+- **Nome fisso dello stack** (`name: customer-intelligence` nel compose):
+  container, rete e volumi non dipendono dal nome della cartella e non si
+  confondono con gli altri stack presenti sulla macchina.
+
+### Changed
+- `DOCKER.md` riscritto partendo dal censimento delle porte: i comandi per
+  vedere cosa e' in ascolto e cosa pubblicano i container (compresi quelli
+  fermi, che riprenderanno la porta al riavvio), e da li' tre varianti di
+  installazione. Aggiunti fra i problemi `port is already allocated` e
+  `could not find an available, non-overlapping IPv4 address pool among
+  the defaults`, che si presenta con molti stack Docker sulla stessa
+  macchina, con la sottorete da assegnare a mano e i comandi per
+  verificare che sia libera.
+- Documentato che spostare `HTTP_PORT` impedisce il rilascio automatico
+  del certificato Let's Encrypt: la verifica del dominio avviene sulla
+  porta 80 o sulla 443 e non e' spostabile. Con porte alternative il
+  certificato resta quello dell'autorita' locale di Caddy.
+
 ## [0.18.0] - 2026-11-10
 
 ### Added

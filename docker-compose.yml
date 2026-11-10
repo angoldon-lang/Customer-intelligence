@@ -1,3 +1,8 @@
+# Nome fisso del progetto: container, rete e volumi si chiameranno
+# "customer-intelligence-*" indipendentemente dal nome della cartella, e
+# non si confondono con gli altri stack presenti sulla macchina.
+name: customer-intelligence
+
 services:
   # ------------------------------------------------------------------
   # L'applicazione. Nessuna chiave "ports": non pubblica niente
@@ -38,10 +43,16 @@ services:
     image: caddy:2-alpine
     restart: unless-stopped
     ports:
-      # 80 serve anche dopo il passaggio a HTTPS: ci arriva la verifica
-      # del dominio per il rilascio del certificato, e il redirect.
-      - "80:80"
-      - "443:443"
+      # Porte sull'host, configurabili dal .env perche' su una macchina
+      # con altri servizi la 80 e la 443 sono spesso gia' prese.
+      # HTTP_BIND limita l'ascolto a un indirizzo (es. 127.0.0.1).
+      #
+      # La 80 serve anche dopo il passaggio a HTTPS: ci arriva la verifica
+      # del dominio a ogni rinnovo del certificato, e il redirect. Se la
+      # sposti, il rilascio automatico del certificato Let's Encrypt non
+      # funziona piu' (vedi DOCKER.md, "Porte gia' occupate").
+      - "${HTTP_BIND:-0.0.0.0}:${HTTP_PORT:-80}:80"
+      - "${HTTP_BIND:-0.0.0.0}:${HTTPS_PORT:-443}:443"
     environment:
       SITE_ADDRESS: ${SITE_ADDRESS:-https://localhost}
       ACME_EMAIL: ${ACME_EMAIL:-}
