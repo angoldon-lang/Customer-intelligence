@@ -64,6 +64,7 @@ Il risultato decide quale delle tre varianti seguire:
 | 80 e 443 libere | **A** — stack completo |
 | Hai già un reverse proxy (nginx, Apache, Traefik, Caddy) | **B** — dietro il tuo proxy |
 | 80 o 443 occupate da un'applicazione che non è un proxy | **C** |
+| Vuoi tutto su una sola porta, es. la 8001 | **D** — porta unica |
 
 Se non sei sicuro di avere un reverse proxy, questo te lo dice:
 
@@ -304,20 +305,131 @@ sudo ss -tlnp | grep -E ':(80|443) '      # chi è
 sudo systemctl disable --now nginx         # esempio
 ```
 
-**3. Porte alternative, accettando il certificato autofirmato.** Nel
-`.env`:
+**3. Porte alternative** → usa direttamente la **variante D** qui sotto.
+
+Su una porta diversa dalla 80 e dalla 443 il certificato non può essere di
+Let's Encrypt (la verifica del dominio è servita solo su quelle due porte),
+quindi serve una configurazione diversa da quella della variante A: un
+certificato dell'autorità locale di Caddy, dichiarato esplicitamente. È
+esattamente quello che fa la variante D, e vale anche se ti servono due
+porte alternative anziché una: cambia `PUBLIC_PORT`.
+
+Non impostare semplicemente `HTTP_PORT`/`HTTPS_PORT` sulla variante A con
+un dominio pubblico: Caddy tenterebbe un rilascio Let's Encrypt destinato
+a fallire, su porte dove la verifica non arriva.
+
+---
+
+## 6-bis. Variante D — tutto su una sola porta (8001)
+
+Una sola porta pubblicata sull'host, niente 80 e niente 443:
+`https://indirizzo-del-server:8001`.
+
+Nel `.env`:
 
 ```ini
-HTTP_PORT=8080
-HTTPS_PORT=8443
-SITE_ADDRESS=https://intelligence.esempio.it:8443
+SITE_HOST=192.168.1.50        # l'IP o il nome del server, SENZA https:// e senza porta
+PUBLIC_PORT=8001              # opzionale, è il default
+# PUBLIC_BIND=127.0.0.1       # per limitarla alla macchina stessa
 ```
 
-Funziona, ma il certificato **non** può essere di Let's Encrypt: la
-verifica del dominio avviene sulla porta 80 o sulla 443 e non è
-spostabile. Caddy userà la propria autorità locale e il browser mostrerà
-un avviso a ogni accesso. Accettabile per uso interno, non per una
-dashboard usata da altri.
+`SITE_HOST` deve essere **esattamente l'indirizzo con cui aprirai la
+dashboard**: `192.168.1.50` se la raggiungi per IP, `intelligence.interna`
+se per nome. Questa variante non usa `SITE_ADDRESS`.
+
+Va scritto giusto perché da lì dipende il certificato, e un browser che si
+collega a un **indirizzo IP non manda il campo SNI** (il protocollo non lo
+prevede per gli IP): senza sapere in anticipo per quale indirizzo
+rispondere, Caddy non saprebbe quale certificato presentare e la
+connessione fallirebbe con un errore TLS, prima ancora di arrivare
+all'applicazione. Il `Caddyfile.single-port` risolve questo con
+`default_sni`, che legge `SITE_HOST`. Se lo sbagli, il certificato risulta
+emesso per un altro nome e il browser lo rifiuta per nome non
+corrispondente.
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.single-port.yml up -d --build
+```
+
+Per non ripetere i due `-f` ogni volta, nel `.env`:
+
+```ini
+COMPOSE_FILE=docker-compose.yml:docker-compose.single-port.yml
+```
+
+Il risultato: due container, ma **una sola porta pubblicata**.
+
+```
+NAME                            PORTS
+customer-intelligence-app-1     8001/tcp
+customer-intelligence-proxy-1   80/tcp, 443/tcp, 2019/tcp, 443/udp, 0.0.0.0:8001->8001/tcp
+```
+
+Legge solo le frecce: **l'unica è `0.0.0.0:8001->8001/tcp`**. La 80, la
+443 e la 2019 compaiono senza freccia perché l'immagine di Caddy le
+dichiara, ma non sono pubblicate e dall'esterno non esistono. Verificato
+anche sulle regole di Docker, dove l'unica voce è:
+
+```
+DNAT  tcp dpt:8001  to:172.18.0.3:8001
+```
+
+L'app, come sempre, non pubblica niente: la porta 8001 dell'host arriva al
+proxy, che parla con l'applicazione sulla rete interna.
+
+### Il certificato: cosa aspettarsi
+
+Su una porta diversa dalla 80 e dalla 443 **non si può avere un
+certificato Let's Encrypt**: la verifica del dominio viene servita solo su
+quelle due porte e non è spostabile. Questa variante usa quindi
+`tls internal`, cioè l'autorità locale di Caddy, dichiarata
+esplicitamente nel `Caddyfile.single-port` perché il comportamento sia
+prevedibile e Caddy non tenti ogni volta un rilascio destinato a fallire.
+
+In pratica: **la connessione è cifrata**, ma al primo accesso il browser
+mostra un avviso di sicurezza, perché non conosce chi ha emesso il
+certificato. Per una dashboard interna è accettabile.
+
+Se l'avviso ti dà fastidio, il certificato radice di Caddy si può
+installare sui computer che useranno la dashboard. Lo estrai così:
+
+```bash
+docker compose cp proxy:/data/caddy/pki/authorities/local/root.crt ./caddy-root.crt
+```
+
+e lo importi fra le autorità di certificazione attendibili (su macOS:
+Accesso Portachiavi → Sistema → trascina il file → doppio clic → "Fidati
+sempre"; su Windows: doppio clic → Installa certificato → Computer locale
+→ Autorità di certificazione radice attendibili).
+
+Verificato: la catena del certificato servito si verifica contro quel file
+radice e copre l'indirizzo in `SITE_HOST` (anche quando è un IP). Quindi
+importarlo elimina davvero l'avviso, non lo aggira.
+
+Se invece ti serve un certificato pubblicamente valido, l'unica strada è
+che qualcosa risponda sulla 443: la variante B, dietro un reverse proxy
+che tiene lui le porte standard.
+
+### Preferisci HTTP semplice?
+
+Se la dashboard è solo su rete interna e l'avviso del certificato ti
+pesa più della cifratura, servirla in HTTP su una sola porta richiede due
+modifiche:
+
+```ini
+SESSION_COOKIE_SECURE=False
+```
+
+e due modifiche ai file, perché altrimenti vincono loro:
+
+- togliere `SESSION_COOKIE_SECURE: "True"` dal `docker-compose.yml`
+- nel `Caddyfile.single-port`, togliere `tls internal` e il blocco
+  globale `default_sni`, e cambiare l'indirizzo del sito da
+  `https://{$SITE_HOST:localhost}:8001` a `http://{$SITE_HOST:localhost}:8001`
+
+Senza entrambe le modifiche il login non funziona: il cookie di sessione
+resta marcato "secure" e il browser non lo salva su HTTP (vedi la fine
+della variante B). È il motivo per cui la variante parte in HTTPS.
 
 ---
 

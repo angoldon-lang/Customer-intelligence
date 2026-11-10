@@ -1,0 +1,34 @@
+# Variante "tutto su una sola porta".
+#
+# Pubblica una sola porta sull'host, la 8001 per default, e su quella
+# serve l'applicazione in HTTPS. Niente 80, niente 443: utile su una
+# macchina dove sono gia' occupate da altri servizi.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.single-port.yml up -d
+#
+# Nel .env serve:
+#   SITE_HOST=192.168.1.50      l'IP o il nome con cui apri la dashboard,
+#                               senza schema e senza porta
+#   PUBLIC_PORT=8001            (opzionale, e' il default)
+#
+# Il certificato e' emesso dall'autorita' locale di Caddy, quindi al primo
+# accesso il browser mostra un avviso: la verifica di Let's Encrypt
+# funziona solo sulla porta 80 o sulla 443. Vedi DOCKER.md, variante D.
+
+services:
+  proxy:
+    environment:
+      # Deve arrivare dentro al container: il Caddyfile lo legge per
+      # sapere per quale nome o IP emettere il certificato, e quale
+      # presentare quando il browser non manda l'SNI (sempre, con un IP).
+      # Senza questa riga il certificato finirebbe emesso per "localhost"
+      # e il browser lo rifiuterebbe per nome non corrispondente.
+      SITE_HOST: ${SITE_HOST:-localhost}
+    # Sostituisce l'elenco delle porte del file principale invece di
+    # aggiungersi: qui ce n'e' una sola.
+    ports: !override
+      - "${PUBLIC_BIND:-0.0.0.0}:${PUBLIC_PORT:-8001}:8001"
+    volumes:
+      - ./Caddyfile.single-port:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config

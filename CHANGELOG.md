@@ -4,6 +4,48 @@ Tutte le modifiche rilevanti a questo progetto sono documentate in questo file.
 Il formato segue [Keep a Changelog](https://keepachangelog.com/) e il progetto
 usa [Semantic Versioning](https://semver.org/lang/it/).
 
+## [0.19.0] - 2026-11-10
+
+### Added
+- **Variante "tutto su una sola porta"** (`docker-compose.single-port.yml`
+  + `Caddyfile.single-port`): una sola porta pubblicata sull'host, la 8001
+  per default, su cui la dashboard e' servita in HTTPS. Niente 80, niente
+  443. L'applicazione continua a non pubblicare nulla: l'unica regola DNAT
+  creata da Docker e' quella della 8001 verso il proxy.
+  Nel `.env` servono `SITE_HOST` (l'IP o il nome con cui si apre la
+  dashboard) e, se si vuole cambiare porta, `PUBLIC_PORT`; `PUBLIC_BIND`
+  limita l'ascolto a un indirizzo.
+- Documentato in `DOCKER.md` come estrarre il certificato radice di Caddy
+  (`docker compose cp proxy:/data/caddy/pki/authorities/local/root.crt .`)
+  e importarlo, per non vedere piu' l'avviso del browser. Verificato che
+  la catena servita si verifichi contro quel file e copra l'indirizzo in
+  `SITE_HOST`, anche quando e' un IP.
+
+### Fixed
+- **Il certificato non funzionava con un indirizzo IP.** Un browser che
+  apre `https://192.168.1.50:8001` non manda il campo SNI, che il
+  protocollo non prevede per gli indirizzi IP: Caddy non sapeva quale
+  certificato presentare e l'handshake TLS falliva (`tlsv1 alert internal
+  error`) prima di arrivare all'applicazione. Aggiunto `default_sni` nel
+  `Caddyfile.single-port`. Va nel blocco globale: dentro `servers` Caddy
+  lo rifiuta (`unrecognized servers option`) e il proxy non parte.
+- `SITE_HOST` non veniva passata al container del proxy, quindi il
+  certificato risultava emesso per `localhost` e un browser lo avrebbe
+  rifiutato per nome non corrispondente. Aggiunta al blocco
+  `environment` del proxy nell'override.
+- Corretta la variante C di `DOCKER.md`, che diceva di spostare
+  `HTTP_PORT`/`HTTPS_PORT` sulla variante A: con un dominio pubblico su
+  porte non standard Caddy tenta un rilascio Let's Encrypt destinato a
+  fallire, perche' la verifica del dominio e' servita solo sulla 80 e
+  sulla 443. Ora rimanda alla variante D, che dichiara `tls internal`.
+
+### Note
+- Verificato eseguendolo da zero: una sola porta pubblicata, certificato
+  emesso per l'IP e servito correttamente anche senza SNI, catena
+  verificata contro la radice di Caddy, creazione dell'amministratore,
+  login con cookie `Secure`, tutte le pagine ed export CSV, nessun errore
+  nei log dei due container.
+
 ## [0.18.2] - 2026-11-10
 
 ### Note

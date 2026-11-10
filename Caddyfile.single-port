@@ -1,0 +1,60 @@
+# Variante "tutto su una sola porta": usata da
+# docker-compose.single-port.yml.
+#
+# Due differenze dal Caddyfile normale.
+#
+# 1) Il certificato e' sempre emesso dall'autorita' locale di Caddy
+#    (`tls internal`). Non e' una scelta di comodo: la verifica del
+#    dominio di Let's Encrypt avviene solo sulla porta 80 o sulla 443, e
+#    qui nessuna delle due e' pubblicata. Dichiararlo esplicitamente
+#    evita che Caddy tenti ogni volta un rilascio destinato a fallire.
+#
+# 2) `default_sni` e' indispensabile se raggiungi la dashboard con un
+#    indirizzo IP. Un browser che apre https://192.168.1.50:8001 non
+#    manda il campo SNI (il protocollo non lo prevede per gli indirizzi
+#    IP), quindi Caddy non saprebbe quale certificato presentare e la
+#    connessione fallirebbe con un errore TLS, prima di arrivare
+#    all'applicazione. Con `default_sni` sa cosa usare quando l'SNI manca.
+#
+# SITE_HOST e' l'indirizzo con cui apri la dashboard, SENZA schema e senza
+# porta: un IP (192.168.1.50) o un nome (intelligence.interna).
+
+{
+	default_sni {$SITE_HOST:localhost}
+}
+
+https://{$SITE_HOST:localhost}:8001 {
+	tls internal
+
+	# L'import dell'anagrafica carica file Excel. Il limite predefinito
+	# di Caddy e' 10 MB e rifiuterebbe i file piu' grandi con un 413.
+	request_body {
+		max_size 25MB
+	}
+
+	encode zstd gzip
+
+	reverse_proxy app:8001 {
+		# L'applicazione non deve credere di stare in HTTP: senza questi
+		# header genererebbe link http:// nelle pagine e nei report.
+		header_up X-Forwarded-Proto {scheme}
+		header_up X-Forwarded-For {remote_host}
+		header_up Host {host}
+	}
+
+	header {
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	# Niente Strict-Transport-Security qui: con un certificato
+	# autofirmato obbligherebbe il browser a rifiutare l'accesso per mesi
+	# se un giorno tornassi in HTTP sullo stesso indirizzo.
+
+	log {
+		output stdout
+		format console
+	}
+}
