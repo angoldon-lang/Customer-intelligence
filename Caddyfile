@@ -1,0 +1,48 @@
+# Non serve una sezione globale: cosi' com'e', questo file funziona sia
+# con https://localhost (certificato emesso da Caddy) sia con un dominio
+# vero (certificato Let's Encrypt), senza modifiche.
+#
+# Let's Encrypt non chiede un indirizzo email, ma se lo fornisci ti avvisa
+# prima della scadenza nel caso il rinnovo automatico si rompa. Per
+# averlo, scommenta queste tre righe e metti il tuo indirizzo:
+#
+# {
+# 	email tuo.indirizzo@esempio.it
+# }
+#
+# Attenzione a non scriverlo come {$ACME_EMAIL}: se la variabile e' vuota
+# la direttiva resta senza argomento e Caddy non parte.
+
+{$SITE_ADDRESS} {
+	# L'import dell'anagrafica carica file Excel. Il limite predefinito
+	# di Caddy e' 10 MB e rifiuterebbe i file piu' grandi con un 413.
+	request_body {
+		max_size 25MB
+	}
+
+	encode zstd gzip
+
+	reverse_proxy app:8001 {
+		# L'applicazione non deve credere di stare in HTTP: senza questi
+		# header genererebbe link http:// nelle pagine e nei report.
+		header_up X-Forwarded-Proto {scheme}
+		header_up X-Forwarded-For {remote_host}
+		header_up Host {host}
+	}
+
+	# Il browser non deve tornare in HTTP per due anni, sottodomini
+	# compresi. Da togliere se servi anche qualcosa in HTTP sullo stesso
+	# dominio.
+	header {
+		Strict-Transport-Security "max-age=63072000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}

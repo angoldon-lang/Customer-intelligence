@@ -3,6 +3,11 @@
 Guida per installare Customer Intelligence Monitor su una macchina Linux
 pulita, farlo partire da solo all'avvio e tenerlo aggiornato.
 
+> Se preferisci Docker, l'alternativa è [DOCKER.md](DOCKER.md): due
+> container, HTTPS con certificato automatico e nessuna dipendenza da
+> installare sulla macchina oltre a Docker. Le due strade sono
+> alternative: non serve seguirle entrambe.
+
 ---
 
 ## 1. Versione di Python

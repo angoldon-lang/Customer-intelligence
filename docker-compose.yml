@@ -1,0 +1,68 @@
+services:
+  # ------------------------------------------------------------------
+  # L'applicazione. Nessuna chiave "ports": non pubblica niente
+  # sull'host, e' raggiungibile soltanto dal proxy sulla rete interna.
+  # ------------------------------------------------------------------
+  app:
+    build: .
+    image: customer-intelligence:latest
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      # Percorso assoluto nel volume: quattro barre dopo "sqlite:" sono
+      # corrette, tre indicherebbero un percorso relativo.
+      DATABASE_URL: sqlite:////data/app.db
+      # Il proxy serve solo HTTPS, quindi il cookie di sessione puo'
+      # essere marcato "secure".
+      SESSION_COOKIE_SECURE: "True"
+      # Fissata qui perche' nel .env c'e' 8000, che varrebbe per
+      # un'esecuzione senza Docker: dentro al container la porta e' 8001.
+      PORT: "8001"
+      TZ: ${TZ:-Europe/Rome}
+    volumes:
+      - db:/data
+      - logos:/app/app/static/branding
+    expose:
+      # Documenta la porta verso gli altri container. Non apre niente
+      # sull'host: per quello servirebbe "ports", che qui non c'e'.
+      - "8001"
+    networks:
+      - internal
+
+  # ------------------------------------------------------------------
+  # Reverse proxy con HTTPS. E' il solo container che pubblica porte.
+  # Caddy ottiene e rinnova i certificati da solo.
+  # ------------------------------------------------------------------
+  proxy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      # 80 serve anche dopo il passaggio a HTTPS: ci arriva la verifica
+      # del dominio per il rilascio del certificato, e il redirect.
+      - "80:80"
+      - "443:443"
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-https://localhost}
+      ACME_EMAIL: ${ACME_EMAIL:-}
+      TZ: ${TZ:-Europe/Rome}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # I certificati vanno in un volume: senza, ogni "docker compose up"
+      # ne richiederebbe di nuovi e Let's Encrypt applica un limite
+      # settimanale per dominio.
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+    networks:
+      - internal
+
+volumes:
+  db:
+  logos:
+  caddy_data:
+  caddy_config:
+
+networks:
+  internal:

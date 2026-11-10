@@ -45,15 +45,23 @@ Costruire un agente software che monitori notizie e informazioni pubbliche relat
 ├── tests/                      # Test suite
 ├── requirements.txt
 ├── .env.example
+├── Dockerfile                   # Immagine dell'applicazione
+├── docker-compose.yml           # App + reverse proxy HTTPS
+├── Caddyfile                    # Configurazione del proxy
+├── DOCKER.md                    # Installazione con Docker + HTTPS
 ├── INSTALL-LINUX.md             # Installazione su Linux + systemd
 └── README.md
 ```
 
 ## Quick start - macOS
 
-> **Installi su Linux?** Segui [INSTALL-LINUX.md](INSTALL-LINUX.md): copre
-> anche il servizio systemd per l'avvio automatico, i backup del database
-> in modalità WAL e la pubblicazione dietro HTTPS.
+> **Con Docker?** [DOCKER.md](DOCKER.md): due container (applicazione +
+> reverse proxy), HTTPS con certificato automatico, dati su volumi.
+> L'applicazione non pubblica nessuna porta sull'host.
+>
+> **Installazione diretta su Linux?** [INSTALL-LINUX.md](INSTALL-LINUX.md):
+> servizio systemd per l'avvio automatico, backup del database in
+> modalità WAL e pubblicazione dietro HTTPS.
 >
 > **Versione di Python**: dalla 3.10 alla 3.14, cioè quella che trovi di
 > serie su qualunque distribuzione recente. Provata eseguendo i test su

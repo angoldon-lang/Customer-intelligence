@@ -1,0 +1,25 @@
+# Il contesto di build deve contenere il codice e nulla piu'.
+.git
+.gitignore
+venv
+.venv
+env
+__pycache__
+*.py[cod]
+.pytest_cache
+tests
+
+# Mai dentro l'immagine: le credenziali e il database stanno nei volumi e
+# nelle variabili d'ambiente, non in un livello dell'immagine (che resta
+# leggibile a chiunque possa fare "docker history").
+.env
+.env.*
+*.db
+*.db-wal
+*.db-shm
+backups
+
+# Documentazione e logo caricato
+*.md
+app/static/branding/*
+!app/static/branding/.gitkeep

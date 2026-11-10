@@ -4,6 +4,57 @@ Tutte le modifiche rilevanti a questo progetto sono documentate in questo file.
 Il formato segue [Keep a Changelog](https://keepachangelog.com/) e il progetto
 usa [Semantic Versioning](https://semver.org/lang/it/).
 
+## [0.18.0] - 2026-11-10
+
+### Added
+- **Installazione con Docker e HTTPS** (`Dockerfile`, `docker-compose.yml`,
+  `Caddyfile`, `.dockerignore`, `DOCKER.md`). Due container:
+  l'applicazione e un reverse proxy Caddy che termina HTTPS e ottiene da
+  se' il certificato, da Let's Encrypt con un dominio vero o dalla propria
+  autorita' locale con `https://localhost`.
+- **L'applicazione non pubblica nessuna porta sull'host.** Nel compose ha
+  `expose` e non `ports`: e' raggiungibile solo dal proxy sulla rete
+  interna di Docker. Le sole porte pubblicate sono la 443 e la 80, che
+  resta necessaria per la verifica del dominio a ogni rinnovo del
+  certificato. `DOCKER.md` spiega la differenza tra `expose`, `ports` e
+  `ports` legato a `127.0.0.1`, e perche' una porta pubblicata da Docker
+  resta raggiungibile anche con `ufw` che la nega (le regole DNAT di
+  Docker stanno nella tabella `nat` e il traffico attraversa `FORWARD`,
+  non `INPUT`).
+- Immagine in due stadi: nell'immagine finale non entrano pip, la cache ne'
+  gli header di compilazione. L'applicazione gira come utente `cim`
+  (uid 10001), non root. Controllo di salute su `/login` ogni 30 secondi.
+  Un solo worker, di proposito: lo scheduler e' interno al processo.
+- Dati su volumi (`db`, `logos`, `caddy_data`, `caddy_config`), quindi
+  sopravvivono alla ricostruzione dell'immagine. Procedura di backup che
+  non richiede il comando `sqlite3`, assente nell'immagine slim: usa il
+  metodo `backup()` di Python, lo stesso meccanismo del comando `.backup`,
+  che tiene conto del journal WAL.
+- `SESSION_COOKIE_SECURE` e `DATABASE_URL` sono imposti dal compose e
+  vincono sul `.env`: il cookie e' sempre "secure" dietro il proxy e il
+  database finisce nel volume e non nella cartella di lavoro, dove si
+  perderebbe alla ricreazione del container.
+
+### Fixed
+- Nel `Caddyfile` la direttiva `email {$ACME_EMAIL}` impediva l'avvio del
+  proxy quando la variabile era vuota, cioe' nella configurazione
+  predefinita: il segnaposto spariva e la direttiva restava senza
+  argomento (`wrong argument count or unexpected line ending after
+  'email'`). Rimossa: Let's Encrypt non richiede un indirizzo, e chi lo
+  vuole scommenta tre righe con il proprio.
+
+### Note
+- Verificato eseguendolo: immagine costruita, stack avviato, certificato
+  emesso e verificato (`Caddy Local Authority`), redirect 308 da HTTP a
+  HTTPS, creazione dell'amministratore via HTTPS con cookie marcato
+  `Secure`, login, tutte le pagine, export CSV, import di un file Excel
+  con accenti attraverso il proxy, backup ed estrazione dal container,
+  reset dell'utenza, e persistenza dei dati dopo la distruzione e
+  ricreazione del container. Controllato anche che la 8001 non sia
+  raggiungibile dall'host, che nessuna regola DNAT la menzioni e che
+  l'interfaccia di amministrazione di Caddy (2019) non sia raggiungibile
+  dal container dell'applicazione.
+
 ## [0.17.3] - 2026-10-29
 
 ### Note
